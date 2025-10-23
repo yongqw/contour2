@@ -654,9 +654,78 @@ class MainWindow:
         menubar = tk.Menu(self.root)
         self.root.config(menu=menubar)
 
-        # Configure menu fonts for high DPI - larger for better readability
-        main_menu_font = ("Arial", 12, "bold") if ctk else ("Arial", 11, "bold")
-        submenu_font = ("Arial", 11) if ctk else ("Arial", 10)
+        # Get DPI scaling factor and calculate appropriate font sizes
+        if ctk:
+            # For 4K displays with high scaling, use improved font sizing
+            try:
+                # Method 1: Try to get window scaling from system
+                import os
+                import platform
+
+                scale_factor = 1.0
+
+                # Get screen dimensions for fallback detection
+                screen_width = self.root.winfo_screenwidth()
+
+                if platform.system() == "Windows":
+                    try:
+                        import ctypes
+                        # Get Windows display scaling
+                        user32 = ctypes.windll.user32
+                        user32.SetProcessDPIAware()
+                        dpi = user32.GetDpiForWindow(user32.GetActiveWindow())
+                        scale_factor = dpi / 96.0
+                    except:
+                        # Fallback to registry check
+                        try:
+                            import winreg
+                            with winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                                            r"Control Panel\Desktop\WindowMetrics") as key:
+                                scale_factor = int(winreg.QueryValueEx(key, "AppliedDPI")[0]) / 96.0
+                        except:
+                            # Final fallback - use screen size detection
+                            if screen_width >= 3840:  # 4K or higher
+                                scale_factor = 2.0  # Reasonable assumption for 4K
+                            elif screen_width >= 2560:  # 2K or higher
+                                scale_factor = 1.5
+                            else:
+                                scale_factor = 1.0
+                else:
+                    # For non-Windows, try to detect from screen dimensions
+                    if screen_width >= 3840:  # 4K or higher
+                        scale_factor = 2.0  # Reasonable assumption for 4K
+                    elif screen_width >= 2560:  # 2K or higher
+                        scale_factor = 1.5
+
+                # Override with known good value for 2.5x scaling
+                # This should be made configurable in the future
+                if scale_factor < 1.5:
+                    scale_factor = 2.5  # Force to 2.5 for known 4K scaling case
+
+                # Calculate scaled font sizes with reasonable limits
+                base_main_size = 12
+                base_submenu_size = 11
+
+                main_menu_size = min(max(int(base_main_size * scale_factor), 16), 32)  # Min 16, Max 32
+                submenu_size = min(max(int(base_submenu_size * scale_factor), 14), 30)   # Min 14, Max 30
+
+                print(f"DEBUG: Screen width: {screen_width}")
+                print(f"DEBUG: Detected scale factor: {scale_factor:.2f}")
+                print(f"DEBUG: Menu font sizes - Main: {main_menu_size}, Submenu: {submenu_size}")
+
+            except Exception as e:
+                # Fallback to hardcoded values if detection fails
+                print(f"DEBUG: DPI detection failed: {e}")
+                scale_factor = 2.5  # Fallback to current setting
+                main_menu_size = int(12 * scale_factor)
+                submenu_size = int(11 * scale_factor)
+                print(f"DEBUG: Using fallback scale factor: {scale_factor}")
+
+            main_menu_font = ("Arial", main_menu_size, "bold")
+            submenu_font = ("Arial", submenu_size)
+        else:
+            main_menu_font = ("Arial", 11, "bold")
+            submenu_font = ("Arial", 10)
 
         # File menu
         file_menu = tk.Menu(menubar, tearoff=0, font=submenu_font)
