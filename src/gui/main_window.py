@@ -429,12 +429,14 @@ class MainWindow:
 
     def _setup_ctk_visualization_panel(self):
         """Set up the right visualization panel using customtkinter."""
-        # Create contour view (2D)
+        # Create contour view (2D) with DPI scaling
+        scale_factor = self._get_scale_factor()
         self.contour_view = ContourView(
             self.right_frame,
             visualization_state=self.visualization_state,
             on_point_selected=self._on_point_selected,
-            on_waypoint_selected=self._on_waypoint_selected
+            on_waypoint_selected=self._on_waypoint_selected,
+            scale_factor=scale_factor
         )
         self.contour_view.pack(fill=tk.BOTH, expand=True)
 
@@ -623,12 +625,14 @@ class MainWindow:
 
     def _setup_visualization_panel(self):
         """Set up the right visualization panel."""
-        # Create contour view (2D)
+        # Create contour view (2D) with DPI scaling
+        scale_factor = self._get_scale_factor()
         self.contour_view = ContourView(
             self.right_frame,
             visualization_state=self.visualization_state,
             on_point_selected=self._on_point_selected,
-            on_waypoint_selected=self._on_waypoint_selected
+            on_waypoint_selected=self._on_waypoint_selected,
+            scale_factor=scale_factor
         )
         self.contour_view.pack(fill=tk.BOTH, expand=True)
 
@@ -649,6 +653,63 @@ class MainWindow:
             self.current_view_widget = self.contour_view
             self.is_3d_mode = False
 
+    def _get_scale_factor(self):
+        """Get the system DPI scaling factor for font sizing."""
+        if not ctk:
+            return 1.0
+
+        try:
+            # Method 1: Try to get window scaling from system
+            import os
+            import platform
+
+            scale_factor = 1.0
+
+            # Get screen dimensions for fallback detection
+            screen_width = self.root.winfo_screenwidth()
+
+            if platform.system() == "Windows":
+                try:
+                    import ctypes
+                    # Get Windows display scaling
+                    user32 = ctypes.windll.user32
+                    user32.SetProcessDPIAware()
+                    dpi = user32.GetDpiForWindow(user32.GetActiveWindow())
+                    scale_factor = dpi / 96.0
+                except:
+                    # Fallback to registry check
+                    try:
+                        import winreg
+                        with winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                                        r"Control Panel\Desktop\WindowMetrics") as key:
+                            scale_factor = int(winreg.QueryValueEx(key, "AppliedDPI")[0]) / 96.0
+                    except:
+                        # Final fallback - use screen size detection
+                        if screen_width >= 3840:  # 4K or higher
+                            scale_factor = 2.0  # Reasonable assumption for 4K
+                        elif screen_width >= 2560:  # 2K or higher
+                            scale_factor = 1.5
+                        else:
+                            scale_factor = 1.0
+            else:
+                # For non-Windows, try to detect from screen dimensions
+                if screen_width >= 3840:  # 4K or higher
+                    scale_factor = 2.0  # Reasonable assumption for 4K
+                elif screen_width >= 2560:  # 2K or higher
+                    scale_factor = 1.5
+
+            # Override with known good value for 2.5x scaling
+            # This should be made configurable in the future
+            if scale_factor < 1.5:
+                scale_factor = 2.5  # Force to 2.5 for known 4K scaling case
+
+            print(f"DEBUG: Screen width: {screen_width}, Scale factor: {scale_factor:.2f}")
+            return scale_factor
+
+        except Exception as e:
+            print(f"DEBUG: DPI detection failed: {e}")
+            return 2.5  # Fallback to current setting
+
     def _setup_menu(self):
         """Set up application menu bar with high DPI support."""
         menubar = tk.Menu(self.root)
@@ -656,70 +717,16 @@ class MainWindow:
 
         # Get DPI scaling factor and calculate appropriate font sizes
         if ctk:
-            # For 4K displays with high scaling, use improved font sizing
-            try:
-                # Method 1: Try to get window scaling from system
-                import os
-                import platform
+            scale_factor = self._get_scale_factor()
 
-                scale_factor = 1.0
+            # Calculate scaled font sizes with reasonable limits
+            base_main_size = 12
+            base_submenu_size = 11
 
-                # Get screen dimensions for fallback detection
-                screen_width = self.root.winfo_screenwidth()
+            main_menu_size = min(max(int(base_main_size * scale_factor), 16), 32)  # Min 16, Max 32
+            submenu_size = min(max(int(base_submenu_size * scale_factor), 14), 30)   # Min 14, Max 30
 
-                if platform.system() == "Windows":
-                    try:
-                        import ctypes
-                        # Get Windows display scaling
-                        user32 = ctypes.windll.user32
-                        user32.SetProcessDPIAware()
-                        dpi = user32.GetDpiForWindow(user32.GetActiveWindow())
-                        scale_factor = dpi / 96.0
-                    except:
-                        # Fallback to registry check
-                        try:
-                            import winreg
-                            with winreg.OpenKey(winreg.HKEY_CURRENT_USER,
-                                            r"Control Panel\Desktop\WindowMetrics") as key:
-                                scale_factor = int(winreg.QueryValueEx(key, "AppliedDPI")[0]) / 96.0
-                        except:
-                            # Final fallback - use screen size detection
-                            if screen_width >= 3840:  # 4K or higher
-                                scale_factor = 2.0  # Reasonable assumption for 4K
-                            elif screen_width >= 2560:  # 2K or higher
-                                scale_factor = 1.5
-                            else:
-                                scale_factor = 1.0
-                else:
-                    # For non-Windows, try to detect from screen dimensions
-                    if screen_width >= 3840:  # 4K or higher
-                        scale_factor = 2.0  # Reasonable assumption for 4K
-                    elif screen_width >= 2560:  # 2K or higher
-                        scale_factor = 1.5
-
-                # Override with known good value for 2.5x scaling
-                # This should be made configurable in the future
-                if scale_factor < 1.5:
-                    scale_factor = 2.5  # Force to 2.5 for known 4K scaling case
-
-                # Calculate scaled font sizes with reasonable limits
-                base_main_size = 12
-                base_submenu_size = 11
-
-                main_menu_size = min(max(int(base_main_size * scale_factor), 16), 32)  # Min 16, Max 32
-                submenu_size = min(max(int(base_submenu_size * scale_factor), 14), 30)   # Min 14, Max 30
-
-                print(f"DEBUG: Screen width: {screen_width}")
-                print(f"DEBUG: Detected scale factor: {scale_factor:.2f}")
-                print(f"DEBUG: Menu font sizes - Main: {main_menu_size}, Submenu: {submenu_size}")
-
-            except Exception as e:
-                # Fallback to hardcoded values if detection fails
-                print(f"DEBUG: DPI detection failed: {e}")
-                scale_factor = 2.5  # Fallback to current setting
-                main_menu_size = int(12 * scale_factor)
-                submenu_size = int(11 * scale_factor)
-                print(f"DEBUG: Using fallback scale factor: {scale_factor}")
+            print(f"DEBUG: Menu font sizes - Main: {main_menu_size}, Submenu: {submenu_size}")
 
             main_menu_font = ("Arial", main_menu_size, "bold")
             submenu_font = ("Arial", submenu_size)
@@ -776,6 +783,9 @@ class MainWindow:
 
     def _setup_status_bar(self):
         """Set up minimal status bar at bottom of window - single line display."""
+        # Get DPI scaling factor
+        scale_factor = self._get_scale_factor()
+
         if ctk:
             # Use customtkinter for minimal status bar - just one line of text
             self.status_frame = ctk.CTkFrame(self.root, height=16)  # Minimized to 16 pixels - just enough for one line
@@ -783,10 +793,15 @@ class MainWindow:
 
             # Status label - the only thing displayed
             self.status_var = tk.StringVar(value="🟢 Ready")
+
+            # Calculate DPI-scaled font size for customtkinter with moderate scaling
+            # Use smaller base size and more conservative scaling for better readability
+            status_font_size = max(int(6 * scale_factor), 10)
+
             self.status_label = ctk.CTkLabel(
                 self.status_frame,
                 textvariable=self.status_var,
-                font=ctk.CTkFont(size=9),  # Smaller font for minimal height
+                font=ctk.CTkFont(size=status_font_size),  # DPI-scaled font
                 text_color=("gray10", "gray90")
             )
             self.status_label.pack(side=tk.LEFT, padx=8, pady=2)
@@ -798,10 +813,15 @@ class MainWindow:
 
             # Status label - only display
             self.status_var = tk.StringVar(value="Ready")
+
+            # Calculate DPI-scaled font size for standard tkinter with moderate scaling
+            # Use smaller base size and more conservative scaling for better readability
+            status_font_size = max(int(5 * scale_factor), 9)
+
             self.status_label = ttk.Label(
                 self.status_frame,
                 textvariable=self.status_var,
-                font=("Arial", 8)  # Small font for minimal height
+                font=("Arial", status_font_size)  # DPI-scaled font
             )
             self.status_label.pack(side=tk.LEFT, padx=8, pady=2)
 
@@ -1386,19 +1406,66 @@ Keyboard Shortcuts:
                 stats_text += f"CROSS-SECTION: {tunnel_stats.get('cross_section_type', 'N/A')}\n"
                 stats_text += f"WAYPOINTS: {tunnel_stats.get('waypoint_count', 0)}\n"
 
-            # Show in scrollable dialog with larger font for high DPI
+            # Show in scrollable dialog with DPI-aware font sizing
             from tkinter import scrolledtext
             dialog = tk.Toplevel(self.root)
             dialog.title("Detailed Statistics")
-            dialog.geometry("800x600")  # Larger for high DPI
 
-            text_widget = scrolledtext.ScrolledText(dialog, wrap=tk.WORD, width=90, height=30)
-            text_widget.pack(padx=10, pady=10, fill=tk.BOTH, expand=True)
+            # Get scale factor for DPI-aware sizing
+            scale_factor = self._get_scale_factor()
+
+            # Scale dialog size and font for high DPI
+            dialog_width = int(800 * scale_factor)
+            dialog_height = int(600 * scale_factor)
+            dialog.geometry(f"{dialog_width}x{dialog_height}")
+
+            # Scale text widget dimensions
+            text_width = int(90 * scale_factor)
+            text_height = int(30 * scale_factor)
+
+            # Calculate DPI-aware font size
+            font_size = min(max(int(11 * scale_factor), 14), 28)  # Min 14, Max 28
+
+            # Scale padding for high DPI
+            padx = int(10 * scale_factor)
+            pady = int(10 * scale_factor)
+            btn_pady = int(5 * scale_factor)
+
+            text_widget = scrolledtext.ScrolledText(dialog, wrap=tk.WORD, width=text_width, height=text_height)
+            text_widget.pack(padx=padx, pady=pady, fill=tk.BOTH, expand=True)
             text_widget.insert(tk.END, stats_text)
-            text_widget.config(state='disabled', font=("Arial", 11))  # Larger font for high DPI
 
-            close_btn = ttk.Button(dialog, text="Close", command=dialog.destroy)
-            close_btn.pack(pady=5)
+            # Configure font after widget is created
+            text_widget.config(state='disabled')
+            try:
+                text_widget.config(font=("Arial", font_size))
+            except tk.TclError:
+                # If font config fails, it's usually a theme/style issue
+                print("DEBUG: Font configuration failed for ScrolledText, using default")
+                pass
+
+            # DPI-aware button
+            button_font_size = min(max(int(10 * scale_factor), 12), 24)  # Min 12, Max 24
+
+            # Create a frame for the button to apply font styling
+            button_frame = ttk.Frame(dialog)
+            button_frame.pack(pady=btn_pady)
+
+            try:
+                # Try to create button with font
+                close_btn = ttk.Button(button_frame, text="Close", command=dialog.destroy)
+
+                # Configure button style for larger font
+                style = ttk.Style()
+                style.configure('Large.TButton', font=("Arial", button_font_size))
+                close_btn.configure(style='Large.TButton')
+
+                close_btn.pack()
+            except Exception as e:
+                # Fallback if font styling fails
+                print(f"DEBUG: Button font configuration failed: {e}")
+                close_btn = ttk.Button(button_frame, text="Close", command=dialog.destroy)
+                close_btn.pack()
 
         except Exception as e:
             messagebox.showerror("Error", f"Failed to show detailed statistics: {str(e)}")

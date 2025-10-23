@@ -6,7 +6,7 @@ tunnel paths, and user interactions.
 """
 
 import tkinter as tk
-from tkinter import ttk, font as tkfont
+from tkinter import ttk
 from typing import Optional, Callable, List, Tuple, Dict, Any
 import numpy as np
 import matplotlib.pyplot as plt
@@ -76,16 +76,10 @@ class ContourView(ttk.Frame):
         self.selection_patches = []
 
     def _setup_ui(self):
-        """Set up the user interface with DPI scaling and better contrast."""
-        # Main container with dark background for better contrast
+        """Set up the user interface with DPI scaling."""
+        # Main container
         main_frame = ttk.Frame(self)
         main_frame.pack(fill=tk.BOTH, expand=True)
-
-        # Set background color for better visibility
-        try:
-            main_frame.configure(bg='#1E1E1E')
-        except:
-            pass  # Background color not supported
 
         # Create matplotlib canvas
         self.canvas = FigureCanvasTkAgg(self.figure, master=main_frame)
@@ -98,89 +92,29 @@ class ContourView(ttk.Frame):
 
         self.toolbar = NavigationToolbar2Tk(self.canvas, toolbar_frame)
 
-
-    
-        # Enhanced toolbar configuration for high DPI
+        # Configure toolbar for high DPI
         try:
             # Scale toolbar icon size if possible
             toolbar_size = max(int(20 * self.scale_factor), 24)
-
-            # Additional DPI-aware toolbar configuration
-            # Try to set icon size for all toolbar items
-            for toolbar_item in self.toolbar.toolitems:
-                if hasattr(toolbar_item, 'set_iconsize'):
-                    try:
-                        toolbar_item.set_iconsize(toolbar_size)
-                    except:
-                        pass
-
-            # Update toolbar layout
             self.toolbar.update()
+            # Try to set larger icons by adjusting the window
+            self.canvas.manager.set_window_title("Contour View")
+        except Exception:
+            pass  # Toolbar might not support all scaling options
 
-            # Try to set DPI awareness for matplotlib window
-            try:
-                self.canvas.manager.set_window_title("Contour View")
-                # Set DPI scaling for tkinter window (helps with matplotlib integration)
-                if hasattr(self.canvas.manager, 'window'):
-                    self.canvas.manager.window.tk.call('tk', 'scaling', 1.0)
-            except Exception as e:
-                print(f"DEBUG: Toolbar DPI scaling attempt: {e}")
-                pass
+        # Status bar with DPI scaling
+        self.status_frame = ttk.Frame(self)
+        self.status_frame.pack(side=tk.BOTTOM, fill=tk.X)
 
-        except Exception as e:
-            print(f"DEBUG: Toolbar configuration failed: {e}")
-            pass  # Continue even if toolbar scaling fails
+        self.status_var = tk.StringVar(value="Ready")
+        status_font_size = max(int(10 * self.scale_factor), 12)
+        self.status_label = ttk.Label(self.status_frame, textvariable=self.status_var, font=("Arial", status_font_size))
+        self.status_label.pack(side=tk.LEFT, padx=5)
 
-        # Enhanced toolbar font scaling for tooltips and text
-        try:
-            # Find toolbar frame and enhance fonts
-            toolbar_children = self.toolbar.winfo_children()
-            for child in toolbar_children:
-                try:
-                    # Try to configure button fonts and tooltips
-                    if hasattr(child, 'configure'):
-                        # Scale button text if any
-                        current_config = child.configure()
-                        if 'font' in current_config:
-                            font_size = max(int(9 * self.scale_factor), 11)
-                            child.configure(font=("Arial", font_size))
-
-                        # Try to enhance tooltip font size (if available)
-                        if hasattr(child, 'tooltip') and child.tooltip:
-                            try:
-                                tooltip_font = tkfont.Font(size=max(int(9 * self.scale_factor), 11))
-                                if hasattr(child.tooltip, 'configure'):
-                                    child.tooltip.configure(font=tooltip_font)
-                            except:
-                                pass
-                except:
-                    pass
-
-            # Try to directly configure matplotlib toolbar tooltip fonts
-            if hasattr(self.toolbar, '_message'):
-                # Some matplotlib versions use _message for tooltips
-                try:
-                    message_font = tkfont.Font(size=max(int(9 * self.scale_factor), 11))
-                    if hasattr(self.toolbar, 'configure'):
-                        self.toolbar.configure(font=message_font)
-                except:
-                    pass
-
-            # Configure toolbar tooltip delay and appearance for high DPI
-            try:
-                # Access matplotlib's tooltip configuration if available
-                if hasattr(self.toolbar, 'message'):
-                    # Scale tooltip font size
-                    import matplotlib.font_manager as fm
-                    tooltip_font_prop = fm.FontProperties(size=max(int(9 * self.scale_factor), 11))
-                    if hasattr(self.toolbar, 'message'):
-                        self.toolbar.message.set_font(tooltip_font_prop)
-            except:
-                pass
-
-        except Exception as e:
-            print(f"DEBUG: Enhanced toolbar font scaling: {e}")
-            pass
+        self.coordinates_var = tk.StringVar(value="")
+        coord_font_size = max(int(9 * self.scale_factor), 11)
+        self.coordinates_label = ttk.Label(self.status_frame, textvariable=self.coordinates_var, font=("Arial", coord_font_size))
+        self.coordinates_label.pack(side=tk.RIGHT, padx=5)
 
     def _setup_event_handlers(self):
         """Set up matplotlib event handlers."""
@@ -485,11 +419,15 @@ class ContourView(ttk.Frame):
 
     def _on_mouse_motion(self, event):
         """Handle mouse motion events."""
-        # Status bar removed - no coordinate display needed
+        if event.inaxes != self.axes:
+            self.coordinates_var.set("")
+            return
+
+        x, y = event.xdata, event.ydata
+        self.coordinates_var.set(f"X: {x:.1f}, Y: {y:.1f}")
 
         # Handle hover effects
-        if event.inaxes == self.axes and self.visualization_state.interaction_mode == InteractionMode.TUNNEL_EDITING:
-            x, y = event.xdata, event.ydata
+        if self.visualization_state.interaction_mode == InteractionMode.TUNNEL_EDITING:
             self._update_hover_effect(x, y)
 
     def _on_mouse_release(self, event):
@@ -528,7 +466,7 @@ class ContourView(ttk.Frame):
         if event.key == 'escape':
             # Cancel current operation
             self.clear_selected_points()
-            # Status bar removed - no status message needed
+            self.status_var.set("Selection cancelled")
 
         elif event.key == 'delete' and self.selected_waypoints:
             # Delete selected waypoints
@@ -537,12 +475,12 @@ class ContourView(ttk.Frame):
         elif event.key == 'a':
             # Add point mode
             self.visualization_state.set_interaction_mode(InteractionMode.POINT_SELECTION)
-            # Status bar removed - no status message needed
+            self.status_var.set("Point selection mode")
 
         elif event.key == 'e':
             # Edit mode
             self.visualization_state.set_interaction_mode(InteractionMode.TUNNEL_EDITING)
-            # Status bar removed - no status message needed
+            self.status_var.set("Tunnel edit mode")
 
     def _add_click_marker(self, x: float, y: float):
         """Add a temporary click marker."""
@@ -681,9 +619,8 @@ class ContourView(ttk.Frame):
     def export_view(self, filename: str):
         """Export current view to file."""
         self.figure.savefig(filename, dpi=150, bbox_inches='tight')
-        # Status bar removed - no export status message needed
+        self.status_var.set(f"View exported to {filename}")
 
     def set_status(self, message: str):
-        """Set status message (status bar removed)."""
-        # Status bar removed - method kept for compatibility but does nothing
-        pass
+        """Set status message."""
+        self.status_var.set(message)
