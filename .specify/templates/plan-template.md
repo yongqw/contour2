@@ -31,7 +31,11 @@
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-[Gates determined based on constitution file]
+- **Code Quality**: Python 3.11+, type hints, docstrings, PEP 8 compliance required
+- **Testing Standards**: Test-first development mandatory, 90%+ coverage for computational modules
+- **Performance**: 2-second limit for triangulation calculations (10k contour points)
+- **User Experience**: Consistent coordinate systems between 2D/3D views required
+- **Data Standards**: Documented contour file format with validation required
 
 ## Project Structure
 

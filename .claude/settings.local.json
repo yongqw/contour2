@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(powershell:*)",
+      "WebSearch",
+      "WebFetch(domain:docs.scipy.org)",
+      "WebFetch(domain:docs.plotly.com)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:doc.qt.io)",
+      "WebFetch(domain:dearpygui.readthedocs.io)",
+      "WebFetch(domain:arxiv.org)",
+      "WebFetch(domain:wxpython.org)",
+      "Bash(python:*)",
+      "Bash(venvScriptsactivate:*)",
+      "Bash(venv/Scripts/python.exe:*)",
+      "Bash(ls:*)",
+      "Bash(git rev-parse:*)",
+      "Bash(venv\\Scripts\\python.exe:*)",
+      "Bash(./venv/Scripts/python.exe:*)",
+      "Bash(pip install:*)",
+      "Bash(find:*)",
+      "Bash(dir:*)",
+      "Bash(timeout:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
