@@ -689,17 +689,29 @@ class Visualization3DPanel(ttk.Frame):
                 )
                 return
 
-            # Create integrated HTML animation
+            # Set busy cursor to indicate processing
+            if hasattr(self, 'create_animation_btn'):
+                self.create_animation_btn.configure(state='disabled')
+
+            # Set wait cursor for the entire window
+            if hasattr(self, 'winfo_toplevel'):
+                top_level = self.winfo_toplevel()
+                top_level.config(cursor='watch')
+                top_level.update_idletasks()
+
+            # Create integrated HTML animation in data directory to avoid git conflicts
+            import os
+            data_dir = os.path.join(os.getcwd(), 'data', 'animations')
+            os.makedirs(data_dir, exist_ok=True)
+            animation_filename = f"tunnel_animation_{int(time.time())}.html"
+            animation_filepath = os.path.join(data_dir, animation_filename)
+
             animation_file = self.animation_service.create_integrated_animation_html(
                 terrain_mesh=self.terrain_mesh,
                 tunnel_geometry=self.tunnel_geometry,
                 duration=10.0,  # 10 second animation for better visibility
-                filename="tunnel_animation.html"
+                filename=animation_filepath
             )
-
-            # Open animation in default browser
-            import webbrowser
-            import os
 
             # Get absolute path
             abs_path = os.path.abspath(animation_file)
@@ -707,6 +719,15 @@ class Visualization3DPanel(ttk.Frame):
 
             # Open in browser safely in a separate thread to avoid GIL issues
             self._open_browser_safely(file_url)
+
+            # Reset cursor and button
+            if hasattr(self, 'winfo_toplevel'):
+                top_level = self.winfo_toplevel()
+                top_level.config(cursor='')
+                top_level.update_idletasks()
+
+            if hasattr(self, 'create_animation_btn'):
+                self.create_animation_btn.configure(state='normal')
 
             messagebox.showinfo("Animation Created",
                 f"Integrated animation created successfully!\n\n"
@@ -721,6 +742,15 @@ class Visualization3DPanel(ttk.Frame):
                 f"• Responsive design for all devices")
 
         except Exception as e:
+            # Reset cursor and button on error
+            if hasattr(self, 'winfo_toplevel'):
+                top_level = self.winfo_toplevel()
+                top_level.config(cursor='')
+                top_level.update_idletasks()
+
+            if hasattr(self, 'create_animation_btn'):
+                self.create_animation_btn.configure(state='normal')
+
             self._show_error(f"Failed to create integrated animation: {e}")
 
     def _open_browser_safely(self, url: str):

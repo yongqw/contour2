@@ -372,7 +372,7 @@ class Visualization3DService:
                     width=2
                 ),
                 name=f'Tunnel Section {i}' if i == 0 else None,
-                showlegend=(i == 0)
+                showlegend=bool(i == 0)
             )
             traces.append(circle_trace)
 
@@ -455,7 +455,7 @@ class Visualization3DService:
                 yaxis_title="Elevation (m)",
                 width=self.style_config['figure_width'],
                 height=self.style_config['figure_height'] // 2,
-                showlegend=True
+                showlegend=bool(True)
             )
 
             return fig
@@ -656,7 +656,7 @@ class Visualization3DService:
                 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
                 # Create the improved semicircular tunnel geometry
-                from improved_semicircular_tunnel import ImprovedSemicircularTunnelGeometry
+                from src.improved_semicircular_tunnel import ImprovedSemicircularTunnelGeometry
                 tunnel_geom = ImprovedSemicircularTunnelGeometry(simple_waypoints)
 
                 # Generate tunnel mesh with same parameters as improved_semicircular_tunnel.py
@@ -732,7 +732,7 @@ class Visualization3DService:
                     mode='lines',
                     line=dict(color='red', width=10),
                     name='Vehicle Path',
-                    showlegend=False
+                    showlegend=bool(False)
                 )
                 traces.append(centerline)
 
@@ -870,7 +870,7 @@ class Visualization3DService:
                     dash='solid'  # Solid red line for clear tunnel center reference
                 ),
                 name='Center Line',
-                showlegend=True
+                showlegend=bool(True)
             )
             traces.append(center_line)
             logger.info("Added center lane marking")
@@ -902,7 +902,7 @@ class Visualization3DService:
                         dash='solid'  # Solid line for side lanes
                     ),
                     name=lane_names[i],
-                    showlegend=True
+                    showlegend=bool(True)
                 )
                 traces.append(side_lane)
                 logger.info(f"Added {lane_names[i]}")
@@ -983,7 +983,7 @@ class Visualization3DService:
                     width=4
                 ),
                 name=f'{arrow_name} Arrow',
-                showlegend=True
+                showlegend=bool(True)
             )
 
             return arrow_shaft
@@ -1040,7 +1040,7 @@ class Visualization3DService:
                     width=3
                 ),
                 name=marker_name,
-                showlegend=True
+                showlegend=bool(True)
             )
 
             return semicircle_marker
@@ -1104,7 +1104,7 @@ class Visualization3DService:
                             width=12  # Very thick for high visibility
                         ),
                         name=f'Road Surface {segment_idx+1}' if segment_idx == 0 and line_idx == 0 else None,
-                        showlegend=False
+                        showlegend=bool(False)
                     )
                     traces.append(road_surface)
 
@@ -1139,7 +1139,7 @@ class Visualization3DService:
                         line=dict(width=1, color='white')
                     ),
                     name=f'{lane_names[j]}',
-                    showlegend=(j < 2)  # Show legend for first two lanes only
+                    showlegend=bool(j < 2)  # Show legend for first two lanes only
                 )
                 traces.append(lane_marking)
 
