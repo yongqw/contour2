@@ -119,33 +119,332 @@ class MainWindow:
 
             # Right panel - Visualization
             self.right_frame = ttk.Frame(self.main_paned)
-            self.main_paned.add(self.right_frame, weight=3)
+            self.main_paned.add(self.right_frame, weight=5)
 
             # Setup with standard tkinter
             self._setup_standard_tkinter_layout()
 
     def _setup_customtkinter_layout(self):
-        """Setup layout using customtkinter components."""
+        """Setup layout using customtkinter components with draggable splitter."""
         # Create horizontal paned window equivalent using frames
         self.paned_frame = ctk.CTkFrame(self.main_container)
         self.paned_frame.pack(fill=tk.BOTH, expand=True)
 
         # Configure grid for paned frame
-        self.paned_frame.grid_columnconfigure(0, weight=1)
-        self.paned_frame.grid_columnconfigure(1, weight=3)
+        self.paned_frame.grid_columnconfigure(0, weight=1)  # Left panel
+        self.paned_frame.grid_columnconfigure(1, weight=0)  # Splitter (fixed width)
+        self.paned_frame.grid_columnconfigure(2, weight=5)  # Right panel
         self.paned_frame.grid_rowconfigure(0, weight=1)
 
         # Left panel - Tunnel controls (using customtkinter)
         self.left_frame = ctk.CTkFrame(self.paned_frame)
-        self.left_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), padx=(0, 5))
+        self.left_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), padx=(0, 0))
+
+        # Create draggable splitter
+        self._create_draggable_splitter()
 
         # Right panel - Visualization (using customtkinter)
         self.right_frame = ctk.CTkFrame(self.paned_frame)
-        self.right_frame.grid(row=0, column=1, sticky=(tk.W, tk.E, tk.N, tk.S), padx=(5, 0))
+        self.right_frame.grid(row=0, column=2, sticky=(tk.W, tk.E, tk.N, tk.S), padx=(0, 0))
+
+        # Initialize splitter state
+        self._splitter_dragging = False
+        self._splitter_start_x = 0
+        self._left_weight_start = 1
+        self._right_weight_start = 5
 
         # Setup panels with customtkinter
         self._setup_ctk_control_panel()
         self._setup_ctk_visualization_panel()
+
+    def _create_draggable_splitter(self):
+        """Create a draggable splitter between left and right panels."""
+        # Get DPI scaling factor for splitter width
+        scale_factor = self._get_scale_factor()
+        splitter_width = max(int(6 * scale_factor), 8)  # Min 8px, scaled for DPI
+
+        # Create splitter frame
+        self.splitter_frame = ctk.CTkFrame(self.paned_frame, width=splitter_width)
+        self.splitter_frame.grid(row=0, column=1, sticky=(tk.N, tk.S))
+
+        # Make splitter non-resizable
+        self.splitter_frame.grid_propagate(False)
+
+        # Set splitter appearance - matches CustomTkinter theme
+        self.splitter_frame.configure(
+            fg_color=("gray70", "gray40"),  # Lighter in light mode, darker in dark mode
+            corner_radius=0,
+            border_width=0
+        )
+
+        # Bind mouse events for drag functionality
+        self.splitter_frame.bind("<Button-1>", self._on_splitter_press)
+        self.splitter_frame.bind("<B1-Motion>", self._on_splitter_drag)
+        self.splitter_frame.bind("<ButtonRelease-1>", self._on_splitter_release)
+        self.splitter_frame.bind("<Enter>", self._on_splitter_enter)
+        self.splitter_frame.bind("<Leave>", self._on_splitter_leave)
+
+        # Add visual indicator - a small groove or highlight line
+        indicator_width = max(int(2 * scale_factor), 2)  # Min 2px, scaled for DPI
+        self.splitter_indicator = ctk.CTkFrame(self.splitter_frame, width=indicator_width)
+        self.splitter_indicator.place(relx=0.5, rely=0.5, anchor=tk.CENTER, relheight=0.4)
+        self.splitter_indicator.configure(
+            fg_color=("gray50", "gray30"),
+            corner_radius=max(int(1 * scale_factor), 1)
+        )
+
+        # Store hover state for visual feedback
+        self._splitter_hovering = False
+
+        self.logger.debug(f"Created draggable splitter with width: {splitter_width}px (scale: {scale_factor:.2f})")
+
+    def _on_splitter_press(self, event):
+        """Handle mouse press on splitter."""
+        self._splitter_dragging = True
+        self._splitter_start_x = event.x_root
+
+        # Get current column weights
+        self._left_weight_start = self.paned_frame.grid_columnconfigure(0, "weight")
+        self._right_weight_start = self.paned_frame.grid_columnconfigure(2, "weight")
+
+        # Initialize debounce/throttling variables
+        self._last_update_time = 0
+        self._update_interval = 16  # ~60 FPS for smooth updates (milliseconds)
+        self._last_drag_x = 0
+
+        # Change cursor to indicate dragging
+        self.splitter_frame.configure(cursor="sb_h_double_arrow")
+
+        # Focus splitter frame for better event handling
+        self.splitter_frame.focus_set()
+
+        self.logger.debug(f"Splitter drag started at x={event.x_root}, left_weight={self._left_weight_start}, right_weight={self._right_weight_start}")
+
+    def _on_splitter_drag(self, event):
+        """Handle mouse drag on splitter with improved responsiveness and debouncing."""
+        if not self._splitter_dragging:
+            return
+
+        try:
+            import time
+
+            # Check if enough time has passed since last update (throttling)
+            current_time = time.time() * 1000  # Convert to milliseconds
+            if current_time - self._last_update_time < self._update_interval:
+                return  # Skip this update to improve responsiveness
+
+            # Calculate drag distance (positive = right, negative = left)
+            delta_x = event.x_root - self._splitter_start_x
+
+            # Skip tiny movements to improve responsiveness
+            if abs(delta_x - self._last_drag_x) < 2:  # Minimum 2 pixel movement
+                return
+
+            self._last_drag_x = delta_x
+            self._last_update_time = current_time
+
+            # Get the total width of the paned frame
+            paned_width = self.paned_frame.winfo_width()
+            if paned_width <= 1:  # Frame not yet rendered
+                return
+
+            # Use a larger base weight for smoother, more granular control
+            base_total_weight = 100  # Larger value for finer granularity
+
+            # Scale the start weights to our base system
+            scale_factor = base_total_weight / (self._left_weight_start + self._right_weight_start)
+            scaled_left_start = int(self._left_weight_start * scale_factor)
+            scaled_right_start = int(self._right_weight_start * scale_factor)
+
+            # Calculate the pixel equivalent of one weight unit
+            pixels_per_weight = paned_width / base_total_weight
+
+            # Calculate weight change based on drag distance
+            # Positive delta_x = drag right = increase left weight, decrease right weight
+            # Negative delta_x = drag left = decrease left weight, increase right weight
+            weight_change = delta_x / pixels_per_weight
+
+            # Calculate new weights with reasonable minimum bounds (5% of total each)
+            min_weight = max(5, int(base_total_weight * 0.05))  # At least 5% each side
+
+            new_left_weight = max(min_weight, int(scaled_left_start + weight_change))
+            new_right_weight = max(min_weight, int(scaled_right_start - weight_change))
+
+            # Ensure we don't exceed the total weight significantly
+            total_new_weight = new_left_weight + new_right_weight
+            if total_new_weight > base_total_weight * 1.5:  # Allow 50% flexibility
+                # Scale back proportionally
+                scale_back = base_total_weight / total_new_weight
+                new_left_weight = int(new_left_weight * scale_back)
+                new_right_weight = int(new_right_weight * scale_back)
+
+            # Apply new weights (tkinter requires integers)
+            self.paned_frame.grid_columnconfigure(0, weight=new_left_weight)
+            self.paned_frame.grid_columnconfigure(2, weight=new_right_weight)
+
+            # Use update_idletasks() instead of update() to avoid blocking
+            self.paned_frame.update_idletasks()
+
+            # Update status bar with current ratio (less frequently)
+            total_weight = new_left_weight + new_right_weight
+            if total_weight > 0:
+                current_ratio = new_left_weight / total_weight
+                # Update status every few pixels to avoid spamming
+                if int(event.x_root) % 50 == 0:
+                    self.status_var.set(f"Splitter: {current_ratio:.0%} left / {1-current_ratio:.0%} right")
+
+            self.logger.debug(f"Splitter drag: delta_x={delta_x:.1f}, new_left_weight={new_left_weight}, new_right_weight={new_right_weight}")
+
+        except Exception as e:
+            self.logger.error(f"Error during splitter drag: {e}")
+            # Reset dragging state on error
+            self._splitter_dragging = False
+            if hasattr(self, 'splitter_frame'):
+                self.splitter_frame.grab_release()
+            self.splitter_frame.configure(cursor="")
+
+    def _on_splitter_release(self, event):
+        """Handle mouse release on splitter with proper cleanup."""
+        if not self._splitter_dragging:
+            return
+
+        try:
+            self._splitter_dragging = False
+
+            # Release any grab that might have been set (but we don't use grab_set anymore)
+            # Instead, we properly handle focus and cursor
+
+            # Restore cursor properly
+            if hasattr(self, 'splitter_frame'):
+                if self._splitter_hovering:
+                    # If mouse is still hovering, keep the resize cursor
+                    self.splitter_frame.configure(cursor="sb_h_double_arrow")
+                else:
+                    # Otherwise reset to default cursor
+                    self.splitter_frame.configure(cursor="")
+
+            # Ensure the main window regains focus properly
+            self.root.focus_set()
+
+            # Final layout update to ensure everything is properly positioned
+            self.paned_frame.update_idletasks()
+
+            # Log final weights for debugging
+            if hasattr(self, 'paned_frame'):
+                final_left_weight = self.paned_frame.grid_columnconfigure(0, "weight")
+                final_right_weight = self.paned_frame.grid_columnconfigure(2, "weight")
+
+                # Show final ratio in status bar
+                final_ratio = final_left_weight / (final_left_weight + final_right_weight)
+                self.status_var.set(f"✅ Splitter set: {final_ratio:.0%} left / {1-final_ratio:.0%} right")
+
+                self.logger.debug(f"Splitter drag ended: final_left_weight={final_left_weight:.2f}, final_right_weight={final_right_weight:.2f}")
+
+            # Clean up debounce variables
+            if hasattr(self, '_last_update_time'):
+                delattr(self, '_last_update_time')
+            if hasattr(self, '_last_drag_x'):
+                delattr(self, '_last_drag_x')
+
+        except Exception as e:
+            self.logger.error(f"Error during splitter release: {e}")
+            # Ensure cleanup on error
+            self._splitter_dragging = False
+            if hasattr(self, 'splitter_frame'):
+                try:
+                    self.splitter_frame.configure(cursor="")
+                except:
+                    pass
+            # Ensure main window focus
+            try:
+                self.root.focus_set()
+            except:
+                pass
+
+    def _on_splitter_enter(self, event):
+        """Handle mouse enter on splitter."""
+        self._splitter_hovering = True
+
+        # Only change cursor if not currently dragging
+        if not self._splitter_dragging:
+            self.splitter_frame.configure(cursor="sb_h_double_arrow")
+
+        # Visual feedback - slightly brighter on hover
+        if hasattr(self.splitter_frame, 'configure'):
+            try:
+                self.splitter_frame.configure(fg_color=("gray60", "gray35"))
+            except:
+                pass  # Ignore if hover color not supported
+
+    def _on_splitter_leave(self, event):
+        """Handle mouse leave on splitter."""
+        self._splitter_hovering = False
+
+        # Don't change cursor if actively dragging
+        if not self._splitter_dragging:
+            self.splitter_frame.configure(cursor="")
+
+            # Restore normal color
+            if hasattr(self.splitter_frame, 'configure'):
+                try:
+                    self.splitter_frame.configure(fg_color=("gray70", "gray40"))
+                except:
+                    pass  # Ignore if color change fails
+
+    def _reset_splitter_position(self):
+        """Reset splitter to default position (1:5 ratio)."""
+        if hasattr(self, 'paned_frame'):
+            self.paned_frame.grid_columnconfigure(0, weight=1)  # Left panel
+            self.paned_frame.grid_columnconfigure(2, weight=5)  # Right panel
+            self.paned_frame.update_idletasks()
+            self.logger.debug("Splitter reset to default position (1:5 ratio)")
+
+    def _get_splitter_position(self):
+        """Get current splitter position as a ratio (left_weight / total_weight)."""
+        if not hasattr(self, 'paned_frame'):
+            return 0.167  # Default ratio (1 out of 6 ≈ 16.7%)
+
+        left_weight = self.paned_frame.grid_columnconfigure(0, "weight")
+        right_weight = self.paned_frame.grid_columnconfigure(2, "weight")
+        total_weight = left_weight + right_weight
+
+        if total_weight > 0:
+            return left_weight / total_weight
+        return 0.25
+
+    def _set_splitter_position(self, ratio):
+        """Set splitter position based on ratio (0.0 to 1.0)."""
+        if not hasattr(self, 'paned_frame') or ratio <= 0 or ratio >= 1:
+            return
+
+        # Convert ratio to integer weights (tkinter requires integers)
+        total_weight = 40  # Use larger total for more granular control
+        left_weight = int(total_weight * ratio)
+        right_weight = total_weight - left_weight
+
+        # Ensure minimum weights to prevent collapse
+        left_weight = max(5, left_weight)  # Minimum 5
+        right_weight = max(5, right_weight)  # Minimum 5
+
+        self.paned_frame.grid_columnconfigure(0, weight=left_weight)
+        self.paned_frame.grid_columnconfigure(2, weight=right_weight)
+        self.paned_frame.update_idletasks()
+
+        self.logger.debug(f"Splitter set to position: {ratio:.2f} (left: {left_weight}, right: {right_weight})")
+
+    def _adjust_splitter_left(self):
+        """Move splitter to the left (decrease left panel size)."""
+        current_ratio = self._get_splitter_position()
+        new_ratio = max(0.1, current_ratio - 0.05)  # Move 5% left, minimum 10%
+        self._set_splitter_position(new_ratio)
+        self.status_var.set(f"Splitter moved left: {new_ratio:.0%}")
+
+    def _adjust_splitter_right(self):
+        """Move splitter to the right (increase left panel size)."""
+        current_ratio = self._get_splitter_position()
+        new_ratio = min(0.9, current_ratio + 0.05)  # Move 5% right, maximum 90%
+        self._set_splitter_position(new_ratio)
+        self.status_var.set(f"Splitter moved right: {new_ratio:.0%}")
 
     def _setup_standard_tkinter_layout(self):
         """Setup layout using standard tkinter components."""
@@ -837,6 +1136,13 @@ class MainWindow:
         self.root.bind('<Escape>', lambda e: self._clear_selection())
         self.root.bind('<F1>', lambda e: self._show_user_guide())
 
+        # Splitter keyboard shortcuts (only if using customtkinter with splitter)
+        if ctk and hasattr(self, 'splitter_frame'):
+            self.root.bind('<Control-r>', lambda e: self._reset_splitter_position())
+            self.root.bind('<Control-Left>', lambda e: self._adjust_splitter_left())
+            self.root.bind('<Control-Right>', lambda e: self._adjust_splitter_right())
+            self.root.bind('<Control-0>', lambda e: self._set_splitter_position(0.5))  # Equal split
+
     
     def _load_contour_file(self):
         """Load contour data from file."""
@@ -1374,7 +1680,16 @@ Keyboard Shortcuts:
 • Ctrl+O: Open file
 • Ctrl+S: Save project
 • Escape: Clear selection
-• F1: Show this help"""
+• F1: Show this help
+
+5. SPLITTER CONTROL
+   • Drag the gray divider between panels to resize them
+   • Ctrl+R: Reset splitter to default position
+   • Ctrl+Left/Right: Move splitter in small increments
+   • Ctrl+0: Set equal split (50% each)
+
+The splitter supports high DPI scaling and provides smooth
+dragging with visual feedback."""
 
         messagebox.showinfo("User Guide", guide_text)
 
