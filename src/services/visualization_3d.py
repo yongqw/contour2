@@ -691,7 +691,7 @@ class Visualization3DService:
                         k=bottom_array[:, 2],
                         color='gray',  # Same color as tunnel
                         name='Bottom Surface',
-                        opacity=1.0,
+                        opacity=0.3,  # More transparent for better visibility
                         showscale=False,
                         flatshading=True,
                         lighting=dict(ambient=0.8, diffuse=0.8, specular=0.3, roughness=0.3)
@@ -712,7 +712,7 @@ class Visualization3DService:
                         k=tunnel_array[:, 2],
                         color='gray',  # Same color as bottom
                         name='Semicircular Tunnel',
-                        opacity=1.0,
+                        opacity=0.4,  # Semi-transparent for animation visibility
                         showscale=False,
                         flatshading=True,
                         lighting=dict(ambient=0.8, diffuse=0.8, specular=0.3, roughness=0.3)

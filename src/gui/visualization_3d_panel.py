@@ -13,6 +13,8 @@ import numpy as np
 from pathlib import Path
 import webbrowser
 import tempfile
+import threading
+import time
 
 try:
     import customtkinter as ctk
@@ -75,11 +77,7 @@ class Visualization3DPanel(ttk.Frame):
         self.camera_center = {'x': 0, 'y': 0, 'z': 0}
         self.zoom_level = 1.0
 
-        # Animation state
-        self.is_animation_playing = False
-        self.current_frame = 0
-        self.animation_speed = 1.0
-
+        
         # Check plotly availability
         if not PLOTLY_AVAILABLE:
             self._show_error("Plotly is required for 3D visualization. Please install plotly>=5.15.0")
@@ -385,37 +383,6 @@ class Visualization3DPanel(ttk.Frame):
         )
         self.camera_follow_check.pack(anchor=tk.W, padx=5, pady=5)
 
-        # Animation Control Buttons
-        control_frame = ctk.CTkFrame(self.animation_frame)
-        control_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
-
-        button_row = ctk.CTkFrame(control_frame)
-        button_row.pack(fill=tk.X, padx=5, pady=5)
-
-        self.play_btn = ctk.CTkButton(
-            button_row,
-            text="▶ Play",
-            command=self._toggle_animation_playback,
-            width=60
-        )
-        self.play_btn.pack(side=tk.LEFT, padx=2)
-
-        self.stop_btn = ctk.CTkButton(
-            button_row,
-            text="■ Stop",
-            command=self._stop_animation,
-            width=60
-        )
-        self.stop_btn.pack(side=tk.LEFT, padx=2)
-
-        self.reset_btn = ctk.CTkButton(
-            button_row,
-            text="⟲ Reset",
-            command=self._reset_animation,
-            width=60
-        )
-        self.reset_btn.pack(side=tk.LEFT, padx=2)
-
         # Create Animation Button
         self.create_animation_btn = ctk.CTkButton(
             self.animation_frame,
@@ -555,9 +522,9 @@ class Visualization3DPanel(ttk.Frame):
 
     def _on_animation_speed_changed(self):
         """Handle animation speed change."""
-        self.animation_speed = self.animation_speed_var.get()
         # Update animation service if available
-        self.animation_service.config['speed_multiplier'] = self.animation_speed
+        speed_multiplier = self.animation_speed_var.get()
+        self.animation_service.config['speed_multiplier'] = speed_multiplier
 
     def _on_car_speed_changed(self):
         """Handle car speed change."""
@@ -713,7 +680,7 @@ class Visualization3DPanel(ttk.Frame):
                 self._show_error(f"Failed to update camera: {e}")
 
     def _create_animation(self):
-        """Create animation frames."""
+        """Create integrated HTML animation and open in browser."""
         try:
             if not self.terrain_mesh or not self.tunnel_geometry:
                 messagebox.showwarning(
@@ -722,52 +689,59 @@ class Visualization3DPanel(ttk.Frame):
                 )
                 return
 
-            # Create animation using current settings
-            animation_fig = self.animation_service.create_animation_figure(
+            # Create integrated HTML animation
+            animation_file = self.animation_service.create_integrated_animation_html(
                 terrain_mesh=self.terrain_mesh,
                 tunnel_geometry=self.tunnel_geometry,
-                duration=5.0  # 5 second animation
+                duration=10.0,  # 10 second animation for better visibility
+                filename="tunnel_animation.html"
             )
 
-            self.current_figure = animation_fig
+            # Open animation in default browser
+            import webbrowser
+            import os
 
-            # Notify parent of animation creation
-            if self.on_animation_update:
-                # Extract frames for display
-                frames = animation_fig.frames
-                self.on_animation_update(frames)
+            # Get absolute path
+            abs_path = os.path.abspath(animation_file)
+            file_url = f"file:///{abs_path.replace(os.sep, '/')}"
 
-            messagebox.showinfo("Success", "Animation created successfully!")
+            # Open in browser safely in a separate thread to avoid GIL issues
+            self._open_browser_safely(file_url)
+
+            messagebox.showinfo("Animation Created",
+                f"Integrated animation created successfully!\n\n"
+                f"Animation file: {abs_path}\n"
+                f"Opened in default browser.\n\n"
+                f"Features:\n"
+                f"• Integrated animation controls\n"
+                f"• Speed adjustment (0.1x - 3.0x)\n"
+                f"• Progress bar and frame slider\n"
+                f"• Camera preset views (Top, Side, Isometric)\n"
+                f"• Real-time 3D interaction\n"
+                f"• Responsive design for all devices")
 
         except Exception as e:
-            self._show_error(f"Failed to create animation: {e}")
+            self._show_error(f"Failed to create integrated animation: {e}")
 
-    def _toggle_animation_playback(self):
-        """Toggle animation playback."""
-        self.is_animation_playing = not self.is_animation_playing
+    def _open_browser_safely(self, url: str):
+        """
+        Safely open browser in a separate thread to avoid GIL issues in Python 3.13.
 
-        if self.is_animation_playing:
-            self.play_btn.configure(text="⏸ Pause")
-            self._play_animation()
-        else:
-            self.play_btn.configure(text="▶ Play")
+        Args:
+            url: URL to open in browser
+        """
+        def open_in_thread():
+            try:
+                # Small delay to ensure GUI is responsive
+                time.sleep(0.1)
+                webbrowser.open(url)
+            except Exception as e:
+                # Log error but don't crash the application
+                print(f"Failed to open browser: {e}")
 
-    def _play_animation(self):
-        """Play animation."""
-        # This would require animation playback implementation
-        # For now, just show a placeholder
-        pass
-
-    def _stop_animation(self):
-        """Stop animation playback."""
-        self.is_animation_playing = False
-        self.play_btn.configure(text="▶ Play")
-        self.current_frame = 0
-
-    def _reset_animation(self):
-        """Reset animation to first frame."""
-        self.current_frame = 0
-        self._stop_animation()
+        # Start browser opening in a separate thread
+        thread = threading.Thread(target=open_in_thread, daemon=True)
+        thread.start()
 
     def _export_scene(self):
         """Export current scene to selected format."""
