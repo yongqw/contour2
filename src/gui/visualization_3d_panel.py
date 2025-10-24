@@ -113,9 +113,9 @@ class Visualization3DPanel(ttk.Frame):
         self.paned_window = ctk.CTkFrame(self.main_frame)
         self.paned_window.pack(fill=tk.BOTH, expand=True)
 
-        # Left panel for controls
-        self.controls_frame = ctk.CTkFrame(self.paned_window)
-        self.controls_frame.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 5))
+        # Left panel for controls - make it scrollable with fixed width
+        self.controls_scrollable = ctk.CTkScrollableFrame(self.paned_window, fg_color="transparent", width=350)
+        self.controls_scrollable.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 5))
 
         # Right panel for 3D visualization
         self.viz_frame = ctk.CTkFrame(self.paned_window)
@@ -124,7 +124,7 @@ class Visualization3DPanel(ttk.Frame):
         # Create 3D plot display area
         self._create_3d_plot_area()
 
-        # Control panels in left frame
+        # Control panels in scrollable left frame
         self._create_scene_controls_ctk()
         self._create_camera_controls_ctk()
         self._create_animation_controls_ctk()
@@ -153,7 +153,7 @@ class Visualization3DPanel(ttk.Frame):
     def _create_scene_controls_ctk(self):
         """Create scene control panel with CustomTkinter."""
         # Scene Controls Frame
-        self.scene_frame = ctk.CTkFrame(self.controls_frame)
+        self.scene_frame = ctk.CTkFrame(self.controls_scrollable)
         self.scene_frame.pack(fill=tk.X, pady=(0, 10))
 
         # Scene Title
@@ -225,7 +225,7 @@ class Visualization3DPanel(ttk.Frame):
     def _create_camera_controls_ctk(self):
         """Create camera control panel with CustomTkinter."""
         # Camera Controls Frame
-        self.camera_frame = ctk.CTkFrame(self.controls_frame)
+        self.camera_frame = ctk.CTkFrame(self.controls_scrollable)
         self.camera_frame.pack(fill=tk.X, pady=(0, 10))
 
         # Camera Title
@@ -334,7 +334,7 @@ class Visualization3DPanel(ttk.Frame):
     def _create_animation_controls_ctk(self):
         """Create animation control panel with CustomTkinter."""
         # Animation Controls Frame
-        self.animation_frame = ctk.CTkFrame(self.controls_frame)
+        self.animation_frame = ctk.CTkFrame(self.controls_scrollable)
         self.animation_frame.pack(fill=tk.X, pady=(0, 10))
 
         # Animation Title
@@ -427,7 +427,7 @@ class Visualization3DPanel(ttk.Frame):
     def _create_export_controls_ctk(self):
         """Create export control panel with CustomTkinter."""
         # Export Controls Frame
-        self.export_frame = ctk.CTkFrame(self.controls_frame)
+        self.export_frame = ctk.CTkFrame(self.controls_scrollable)
         self.export_frame.pack(fill=tk.X, pady=(0, 10))
 
         # Export Title
