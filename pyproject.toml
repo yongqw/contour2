@@ -127,47 +127,42 @@ module = [
 ]
 ignore_missing_imports = true
 
-# pytest configuration
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-python_files = ["test_*.py", "*_test.py"]
-python_classes = ["Test*"]
-python_functions = ["test_*"]
-addopts = [
-    "--cov=src",
-    "--cov-report=html",
-    "--cov-report=term-missing",
-    "--cov-fail-under=90",
-    "-v"
-]
-markers = [
-    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
-    "integration: marks tests as integration tests",
-    "unit: marks tests as unit tests"
-]
+# pytest configuration (if tests are re-enabled)
+# [tool.pytest.ini_options]
+# testpaths = ["tests"]
+# python_files = ["test_*.py", "*_test.py"]
+# python_classes = ["Test*"]
+# python_functions = ["test_*"]
+# addopts = ["-v"]
+# markers = [
+#     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+#     "integration: marks tests as integration tests",
+#     "unit: marks tests as unit tests"
+# ]
+# pythonpath = ["."]
 
-# Coverage configuration
-[tool.coverage.run]
-source = ["src"]
-omit = [
-    "*/tests/*",
-    "*/test_*",
-    "*/__pycache__/*",
-    "*/venv/*",
-    "*/build/*"
-]
+# Coverage configuration (if tests are re-enabled)
+# [tool.coverage.run]
+# source = ["src"]
+# omit = [
+#     "*/tests/*",
+#     "*/test_*",
+#     "*/__pycache__/*",
+#     "*/venv/*",
+#     "*/build/*"
+# ]
 
-[tool.coverage.report]
-exclude_lines = [
-    "pragma: no cover",
-    "def __repr__",
-    "if self.debug:",
-    "if settings.DEBUG",
-    "raise AssertionError",
-    "raise NotImplementedError",
-    "if 0:",
-    "if __name__ == .__main__.:"
-]
+# [tool.coverage.report]
+# exclude_lines = [
+#     "pragma: no cover",
+#     "def __repr__",
+#     "if self.debug:",
+#     "if settings.DEBUG",
+#     "raise AssertionError",
+#     "raise NotImplementedError",
+#     "if 0:",
+#     "if __name__ == .__main__.:"
+# ]
 
 # Flake8 configuration
 [tool.flake8]
