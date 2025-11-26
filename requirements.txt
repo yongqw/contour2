@@ -1,13 +1,13 @@
 # Terrain Tunneling Calculator - Python Dependencies
 # Created: 2025-10-20
-# Updated: 2025-10-23
+# Updated: 2025-11-26
 # Python: 3.11+
 
 # Core Runtime Dependencies - Required for application to run
 numpy>=1.24.0                    # Numerical computations, arrays, math operations
 scipy>=1.10.0                     # Delaunay triangulation for terrain mesh
-matplotlib>=3.7.0                 # 2D visualization and plotting
-plotly>=5.15.0                    # 3D visualization and interactive plotting
+matplotlib>=3.7.0                 # 2D/3D visualization and plotting (dual rendering support)
+plotly>=5.15.0                    # 3D visualization and interactive plotting (HTML mode)
 customtkinter>=5.2.0              # Modern GUI framework (replaces standard tkinter)
 
 # Development and Testing Dependencies

@@ -36,6 +36,7 @@ from models.terrain_mesh import TerrainMesh
 from models.tunnel_geometry import TunnelGeometry
 from services.visualization_3d import Visualization3DService
 from services.animation import AnimationService
+from services.python_3d_renderer import Python3DRenderer
 from utils.exceptions import VisualizationError, AnimationError
 
 
@@ -65,12 +66,17 @@ class Visualization3DPanel(ttk.Frame):
         # Services
         self.viz_service = Visualization3DService()
         self.animation_service = AnimationService()
+        self.python_renderer = Python3DRenderer()
 
         # Data state
         self.terrain_mesh: Optional[TerrainMesh] = None
         self.tunnel_geometry: Optional[TunnelGeometry] = None
         self.current_figure: Optional[go.Figure] = None
         self.current_animation: Optional[List] = None
+        self.current_matplotlib_figure = None
+
+        # Rendering mode: 'html' or 'python'
+        self.rendering_mode = 'html'
 
         # Camera control state
         self.camera_position = {'x': 1.5, 'y': 1.5, 'z': 1.5}
@@ -195,6 +201,41 @@ class Visualization3DPanel(ttk.Frame):
             command=self._on_scene_options_changed
         )
         self.show_wireframe_check.pack(anchor=tk.W, padx=5, pady=2)
+
+        # Rendering Mode Separator
+        separator = ctk.CTkLabel(options_frame, text="─" * 30)
+        separator.pack(anchor=tk.W, padx=5, pady=(10, 5))
+
+        # Rendering Mode Label
+        render_mode_label = ctk.CTkLabel(
+            options_frame,
+            text="Rendering Mode:",
+            font=ctk.CTkFont(size=12, weight="bold")
+        )
+        render_mode_label.pack(anchor=tk.W, padx=5, pady=(5, 2))
+
+        # Rendering Mode Selection
+        self.render_mode_var = tk.StringVar(value=self.rendering_mode)
+
+        # HTML Rendering Radio Button
+        self.html_render_radio = ctk.CTkRadioButton(
+            options_frame,
+            text="HTML (Browser-based)",
+            variable=self.render_mode_var,
+            value="html",
+            command=self._on_render_mode_changed
+        )
+        self.html_render_radio.pack(anchor=tk.W, padx=15, pady=2)
+
+        # Python Rendering Radio Button
+        self.python_render_radio = ctk.CTkRadioButton(
+            options_frame,
+            text="Python Native Window",
+            variable=self.render_mode_var,
+            value="python",
+            command=self._on_render_mode_changed
+        )
+        self.python_render_radio.pack(anchor=tk.W, padx=15, pady=2)
 
         # Material Style Selection
         material_frame = ctk.CTkFrame(self.scene_frame)
@@ -506,6 +547,40 @@ class Visualization3DPanel(ttk.Frame):
         })
         self._update_3d_scene()
 
+    def _on_render_mode_changed(self):
+        """Handle rendering mode change between HTML and Python."""
+        self.rendering_mode = self.render_mode_var.get()
+        self.logger.info(f"Rendering mode changed to: {self.rendering_mode}")
+
+        # Clear current visualization
+        self._clear_current_visualization()
+
+        # Update scene with new rendering mode
+        self._update_3d_scene()
+
+    def _clear_current_visualization(self):
+        """Clear current visualization from the display area."""
+        try:
+            # Clear plot frame
+            for widget in self.plot_frame.winfo_children():
+                widget.destroy()
+
+            # Clean up matplotlib resources if needed
+            if self.python_renderer:
+                self.python_renderer.cleanup()
+
+            # Clear temp HTML file if exists
+            if hasattr(self, 'temp_html_file'):
+                try:
+                    import os
+                    os.unlink(self.temp_html_file)
+                except:
+                    pass
+                self.temp_html_file = None
+
+        except Exception as e:
+            self.logger.warning(f"Error clearing visualization: {e}")
+
     def _on_camera_position_changed(self):
         """Handle camera position change."""
         self.camera_position = {
@@ -550,6 +625,7 @@ class Visualization3DPanel(ttk.Frame):
         try:
             if not self.terrain_mesh:
                 self.logger.warning("No terrain mesh available for 3D scene")
+                self._show_placeholder()
                 return
 
             # Remove placeholder if it exists
@@ -563,6 +639,35 @@ class Visualization3DPanel(ttk.Frame):
                 max_z = np.max(self.terrain_mesh.vertices[:, 2])
                 self.logger.info(f"Terrain elevation range: {min_z:.1f} to {max_z:.1f} meters")
 
+            # Display rendering options instead of auto-rendering
+            self._display_rendering_options()
+
+        except Exception as e:
+            self.logger.error(f"Failed to update 3D scene: {e}")
+            self._show_error(f"Failed to update 3D scene: {str(e)}")
+
+    def _show_placeholder(self):
+        """Show placeholder message when no terrain data is available."""
+        try:
+            # Clear the plot frame
+            for widget in self.plot_frame.winfo_children():
+                widget.destroy()
+
+            # Create placeholder label
+            self.placeholder_label = ctk.CTkLabel(
+                self.plot_frame,
+                text="🏔️\n\nNo terrain data available\n\nPlease create or load terrain data\nto enable 3D visualization",
+                justify=tk.CENTER,
+                font=ctk.CTkFont(size=14)
+            )
+            self.placeholder_label.pack(expand=True, fill=tk.BOTH, pady=50)
+
+        except Exception as e:
+            self.logger.error(f"Failed to show placeholder: {e}")
+
+    def _update_html_scene(self):
+        """Update scene using HTML rendering (Plotly)."""
+        try:
             # Create integrated scene with current settings
             fig = self.viz_service.create_integrated_scene(
                 terrain_mesh=self.terrain_mesh,
@@ -621,8 +726,7 @@ class Visualization3DPanel(ttk.Frame):
                 fig.write_html(tmp_file.name, include_plotlyjs='cdn')
                 tmp_file_path = tmp_file.name
 
-            # Create a simple web browser view using tkinter's built-in HTML viewer
-            # For now, we'll create a simple text display with a button to open in browser
+            # Display info and button
             info_label = ctk.CTkLabel(
                 self.plot_frame,
                 text="3D Scene Created Successfully!\n\nClick below to open in browser for interactive view",
@@ -655,10 +759,178 @@ class Visualization3DPanel(ttk.Frame):
             )
             error_label.pack(pady=20)
 
+    def _display_rendering_options(self):
+        """Display rendering mode options and buttons."""
+        try:
+            # Clear the plot frame
+            for widget in self.plot_frame.winfo_children():
+                widget.destroy()
+
+            # Display title
+            title_label = ctk.CTkLabel(
+                self.plot_frame,
+                text="3D Rendering Options",
+                font=ctk.CTkFont(size=18, weight="bold")
+            )
+            title_label.pack(pady=20)
+
+            # Display current mode
+            mode_text = f"Current Mode: {'HTML (Browser-based)' if self.rendering_mode == 'html' else 'Python Native Window'}"
+            mode_label = ctk.CTkLabel(
+                self.plot_frame,
+                text=mode_text,
+                font=ctk.CTkFont(size=14)
+            )
+            mode_label.pack(pady=10)
+
+            # Button frame
+            button_frame = ctk.CTkFrame(self.plot_frame)
+            button_frame.pack(pady=20)
+
+            # HTML mode button
+            html_btn = ctk.CTkButton(
+                button_frame,
+                text="🌐 Open 3D View in Browser",
+                command=self._open_html_view
+            )
+            html_btn.pack(pady=5, padx=10, fill=tk.X)
+
+            # Python mode button
+            python_btn = ctk.CTkButton(
+                button_frame,
+                text="🐍 Open Python 3D Window",
+                command=self._open_python_window
+            )
+            python_btn.pack(pady=5, padx=10, fill=tk.X)
+
+            # Instructions
+            instructions = ctk.CTkLabel(
+                self.plot_frame,
+                text="Choose your preferred rendering method above.\n\n"
+                     "• HTML Mode: Interactive browser-based 3D visualization\n"
+                     "• Python Mode: Native matplotlib 3D window",
+                justify=tk.CENTER,
+                font=ctk.CTkFont(size=12)
+            )
+            instructions.pack(pady=20)
+
+        except Exception as e:
+            self.logger.error(f"Failed to display rendering options: {e}")
+            error_label = ctk.CTkLabel(
+                self.plot_frame,
+                text=f"Failed to display options\n\nError: {str(e)}",
+                justify=tk.CENTER
+            )
+            error_label.pack(pady=20)
+
+    def _open_html_view(self):
+        """Open 3D view in browser using HTML rendering."""
+        try:
+            if not self.terrain_mesh:
+                messagebox.showwarning("No Data", "Please create or load terrain data first.")
+                return
+
+            # Create HTML scene and open in browser
+            fig = self.viz_service.create_integrated_scene(
+                terrain_mesh=self.terrain_mesh,
+                tunnel_geometry=self.tunnel_geometry,
+                title="3D Terrain and Tunnel Visualization"
+            )
+
+            # Create temporary HTML file
+            import tempfile
+            import webbrowser
+            import os
+
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.html', delete=False) as tmp_file:
+                fig.write_html(tmp_file.name, include_plotlyjs='cdn')
+                tmp_file_path = tmp_file.name
+
+            # Open in browser
+            webbrowser.open(f'file://{tmp_file_path}')
+
+            # Store for cleanup
+            if hasattr(self, 'temp_html_file'):
+                try:
+                    os.unlink(self.temp_html_file)
+                except:
+                    pass
+            self.temp_html_file = tmp_file_path
+
+            messagebox.showinfo("Success", "3D view opened in browser!")
+
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to open HTML view: {str(e)}")
+
+    def _open_python_window(self):
+        """Open 3D view in a dedicated Python matplotlib window."""
+        try:
+            if not self.terrain_mesh:
+                messagebox.showwarning("No Data", "Please create or load terrain data first.")
+                return
+
+            # Create figure with Python renderer
+            fig = self.python_renderer.create_integrated_figure(
+                terrain_mesh=self.terrain_mesh,
+                tunnel_geometry=self.tunnel_geometry,
+                title="3D Terrain and Tunnel Visualization (Python Native)"
+            )
+
+            # Show the figure in a separate matplotlib window
+            import matplotlib.pyplot as plt
+            plt.show(block=False)
+
+            messagebox.showinfo("Success", "Python 3D window opened!\n\nUse matplotlib controls for interaction.")
+
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to open Python window: {str(e)}")
+
+    def _update_python_scene(self):
+        """Update scene using Python native rendering (matplotlib)."""
+        try:
+            # Create integrated scene with Python renderer
+            fig = self.python_renderer.create_integrated_figure(
+                terrain_mesh=self.terrain_mesh,
+                tunnel_geometry=self.tunnel_geometry,
+                title="3D Terrain and Tunnel Visualization (Python Native)"
+            )
+
+            # Apply wireframe if requested
+            if hasattr(self, 'show_wireframe_var') and self.show_wireframe_var.get():
+                self.python_renderer.style_config['show_wireframe'] = True
+            else:
+                self.python_renderer.style_config['show_wireframe'] = False
+
+            # Apply camera settings
+            self.python_renderer.set_camera_position(
+                azim=self.camera_position['x'] * 30,  # Convert to azimuth angle
+                elev=self.camera_position['z'] * 30   # Convert to elevation angle
+            )
+
+            self.current_matplotlib_figure = fig
+
+            # Embed the matplotlib figure in tkinter
+            canvas = self.python_renderer.embed_in_tkinter(fig, self.plot_frame)
+
+            # Notify parent of scene update (send matplotlib figure instead of plotly)
+            if self.on_scene_update:
+                self.on_scene_update(fig)
+
+        except Exception as e:
+            self.logger.error(f"Failed to update Python scene: {e}")
+            self._show_error(f"Failed to update Python scene: {str(e)}")
+
     def _update_camera(self):
         """Update camera position in current figure."""
-        if self.current_figure:
-            try:
+        try:
+            if self.rendering_mode == 'python' and self.python_renderer:
+                # Update Python renderer camera
+                self.python_renderer.set_camera_position(
+                    azim=self.camera_position['x'] * 30,  # Convert to azimuth angle
+                    elev=self.camera_position['z'] * 30   # Convert to elevation angle
+                )
+            elif self.current_figure:  # HTML mode
+                # Update plotly figure camera
                 self.current_figure.update_layout(
                     scene=dict(
                         camera=dict(
@@ -672,15 +944,18 @@ class Visualization3DPanel(ttk.Frame):
                     )
                 )
 
-                # Notify parent of scene update
-                if self.on_scene_update:
+            # Notify parent of scene update
+            if self.on_scene_update:
+                if self.rendering_mode == 'python' and self.current_matplotlib_figure:
+                    self.on_scene_update(self.current_matplotlib_figure)
+                elif self.current_figure:
                     self.on_scene_update(self.current_figure)
 
-            except Exception as e:
-                self._show_error(f"Failed to update camera: {e}")
+        except Exception as e:
+            self._show_error(f"Failed to update camera: {e}")
 
     def _create_animation(self):
-        """Create integrated HTML animation and open in browser."""
+        """Create animation based on user choice."""
         try:
             if not self.terrain_mesh or not self.tunnel_geometry:
                 messagebox.showwarning(
@@ -689,16 +964,117 @@ class Visualization3DPanel(ttk.Frame):
                 )
                 return
 
-            # Set busy cursor to indicate processing
-            if hasattr(self, 'create_animation_btn'):
-                self.create_animation_btn.configure(state='disabled')
+            # Show animation mode selection dialog
+            self._show_animation_options()
 
-            # Set wait cursor for the entire window
+        except Exception as e:
+            self._show_error(f"Failed to create animation: {e}")
+
+    def _show_animation_options(self):
+        """Show animation rendering mode options."""
+        try:
+            # Clear the plot frame for animation options
+            for widget in self.plot_frame.winfo_children():
+                widget.destroy()
+
+            # Title
+            title_label = ctk.CTkLabel(
+                self.plot_frame,
+                text="Animation Options",
+                font=ctk.CTkFont(size=18, weight="bold")
+            )
+            title_label.pack(pady=20)
+
+            # Button frame
+            button_frame = ctk.CTkFrame(self.plot_frame)
+            button_frame.pack(pady=20)
+
+            # HTML animation button
+            html_btn = ctk.CTkButton(
+                button_frame,
+                text="🌐 Create Browser Animation",
+                command=self._create_html_animation,
+                width=250
+            )
+            html_btn.pack(pady=10, padx=20)
+
+            # Python animation button
+            python_btn = ctk.CTkButton(
+                button_frame,
+                text="🐍 Create Python Animation",
+                command=self._create_python_animation,
+                width=250
+            )
+            python_btn.pack(pady=10, padx=20)
+
+            # Instructions
+            instructions = ctk.CTkLabel(
+                self.plot_frame,
+                text="Choose your preferred animation method:\n\n"
+                     "• Browser Animation: Interactive HTML animation with full controls\n"
+                     "• Python Animation: Native matplotlib animation window",
+                justify=tk.CENTER,
+                font=ctk.CTkFont(size=12)
+            )
+            instructions.pack(pady=20)
+
+        except Exception as e:
+            self._show_error(f"Failed to show animation options: {e}")
+
+    def _create_html_animation_with_ui(self):
+        """Create HTML animation with proper UI handling."""
+        try:
+            # Set busy cursor
             if hasattr(self, 'winfo_toplevel'):
                 top_level = self.winfo_toplevel()
                 top_level.config(cursor='watch')
                 top_level.update_idletasks()
 
+            # Create HTML animation
+            self._create_html_animation()
+
+            # Reset cursor
+            if hasattr(self, 'winfo_toplevel'):
+                top_level.config(cursor='')
+                top_level.update_idletasks()
+
+        except Exception as e:
+            # Reset cursor on error
+            if hasattr(self, 'winfo_toplevel'):
+                top_level = self.winfo_toplevel()
+                top_level.config(cursor='')
+                top_level.update_idletasks()
+            self._show_error(f"Failed to create HTML animation: {e}")
+
+    def _create_python_animation_with_ui(self):
+        """Create Python animation with proper UI handling."""
+        try:
+            # Set busy cursor
+            if hasattr(self, 'winfo_toplevel'):
+                top_level = self.winfo_toplevel()
+                top_level.config(cursor='watch')
+                top_level.update_idletasks()
+
+            # Create Python animation
+            self._create_python_animation()
+
+            # Reset cursor
+            if hasattr(self, 'winfo_toplevel'):
+                top_level = self.winfo_toplevel()
+                top_level.config(cursor='')
+                top_level.update_idletasks()
+
+        except Exception as e:
+            # Reset cursor on error
+            if hasattr(self, 'winfo_toplevel'):
+                top_level = self.winfo_toplevel()
+                top_level.config(cursor='')
+                top_level.update_idletasks()
+            self._show_error(f"Failed to create Python animation: {e}")
+
+    def _create_html_animation(self):
+        """Create HTML animation and open in browser."""
+        try:
             # Create integrated HTML animation in data directory to avoid git conflicts
             import os
             data_dir = os.path.join(os.getcwd(), 'data', 'animations')
@@ -720,17 +1096,8 @@ class Visualization3DPanel(ttk.Frame):
             # Open in browser safely in a separate thread to avoid GIL issues
             self._open_browser_safely(file_url)
 
-            # Reset cursor and button
-            if hasattr(self, 'winfo_toplevel'):
-                top_level = self.winfo_toplevel()
-                top_level.config(cursor='')
-                top_level.update_idletasks()
-
-            if hasattr(self, 'create_animation_btn'):
-                self.create_animation_btn.configure(state='normal')
-
-            messagebox.showinfo("Animation Created",
-                f"Integrated animation created successfully!\n\n"
+            messagebox.showinfo("HTML Animation Created",
+                f"HTML animation created successfully!\n\n"
                 f"Animation file: {abs_path}\n"
                 f"Opened in default browser.\n\n"
                 f"Features:\n"
@@ -742,16 +1109,200 @@ class Visualization3DPanel(ttk.Frame):
                 f"• Responsive design for all devices")
 
         except Exception as e:
-            # Reset cursor and button on error
+            self._show_error(f"Failed to create HTML animation: {str(e)}")
+
+    def _create_python_animation(self):
+        """Create Python native animation and show in independent window."""
+        try:
+            # Set busy cursor
+            if hasattr(self, 'winfo_toplevel'):
+                top_level = self.winfo_toplevel()
+                top_level.config(cursor='watch')
+                top_level.update_idletasks()
+
+            # Create animation using Python renderer
+            anim = self.python_renderer.create_animation(
+                terrain_mesh=self.terrain_mesh,
+                tunnel_geometry=self.tunnel_geometry,
+                duration=10.0,
+                fps=15  # Lower FPS for better performance
+            )
+
+            # Get the figure from the animation
+            fig = anim._fig  # Access the figure from the animation object
+
+            # Show the animation in a separate window with controls
+            self._show_animation_window(fig, anim)
+
+            # Reset cursor
+            if hasattr(self, 'winfo_toplevel'):
+                top_level.config(cursor='')
+                top_level.update_idletasks()
+
+            # Store animation for later use
+            self.current_animation = anim
+
+            messagebox.showinfo("Python Animation Created",
+                f"Python native animation created successfully!\n\n"
+                f"Features:\n"
+                f"• Independent matplotlib animation window\n"
+                f"• Play/Pause/Stop controls\n"
+                f"• Export to GIF capability\n"
+                f"• No browser required")
+
+        except Exception as e:
+            # Reset cursor on error
             if hasattr(self, 'winfo_toplevel'):
                 top_level = self.winfo_toplevel()
                 top_level.config(cursor='')
                 top_level.update_idletasks()
+            self._show_error(f"Failed to create Python animation: {str(e)}")
 
-            if hasattr(self, 'create_animation_btn'):
-                self.create_animation_btn.configure(state='normal')
+    def _show_animation_window(self, fig, anim):
+        """Show animation in a dedicated window with controls."""
+        try:
+            # Get the top-level window (the main application window)
+            main_window = self.winfo_toplevel()
 
-            self._show_error(f"Failed to create integrated animation: {e}")
+            # Create a new window for the animation
+            animation_window = tk.Toplevel(main_window)
+            animation_window.title("Python 3D Animation")
+            animation_window.geometry("900x700")
+
+            # Create a frame for controls
+            control_frame = ttk.Frame(animation_window)
+            control_frame.pack(side=tk.TOP, fill=tk.X, padx=5, pady=5)
+
+            # Add control buttons
+            play_btn = ttk.Button(
+                control_frame,
+                text="▶ Play",
+                command=lambda: self._play_animation(anim)
+            )
+            play_btn.pack(side=tk.LEFT, padx=5)
+
+            pause_btn = ttk.Button(
+                control_frame,
+                text="⏸ Pause",
+                command=lambda: self._pause_animation(anim)
+            )
+            pause_btn.pack(side=tk.LEFT, padx=5)
+
+            stop_btn = ttk.Button(
+                control_frame,
+                text="⏹ Stop",
+                command=lambda: self._stop_animation(anim)
+            )
+            stop_btn.pack(side=tk.LEFT, padx=5)
+
+            save_btn = ttk.Button(
+                control_frame,
+                text="💾 Save as GIF",
+                command=lambda: self._save_animation_as_gif()
+            )
+            save_btn.pack(side=tk.LEFT, padx=5)
+
+            # Status label
+            status_label = ttk.Label(
+                control_frame,
+                text="Python 3D Animation - Use controls above to play",
+                font=('TkDefaultFont', 10)
+            )
+            status_label.pack(side=tk.LEFT, padx=10)
+
+            # Create matplotlib canvas
+            from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
+
+            canvas_frame = ttk.Frame(animation_window)
+            canvas_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+            # Embed the figure in the tkinter window
+            canvas = FigureCanvasTkAgg(fig, master=canvas_frame)
+            canvas.draw()
+            canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+
+            # Add matplotlib toolbar
+            toolbar = NavigationToolbar2Tk(canvas, canvas_frame)
+            toolbar.update()
+            canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+
+            # Store reference
+            self.animation_canvas = canvas
+
+            # Start the animation automatically
+            self._play_animation(anim)
+
+        except Exception as e:
+            self._show_error(f"Failed to show animation window: {str(e)}")
+
+    def _play_animation(self, anim):
+        """Play the animation."""
+        try:
+            if hasattr(anim, 'event_source') and anim.event_source:
+                anim.event_source.start()
+            elif hasattr(anim, 'animation'):
+                anim.animation.event_source.start()
+            self.logger.info("Animation started")
+        except Exception as e:
+            self.logger.error(f"Failed to start animation: {e}")
+
+    def _pause_animation(self, anim):
+        """Pause the animation."""
+        try:
+            if hasattr(anim, 'event_source') and anim.event_source:
+                anim.event_source.stop()
+            elif hasattr(anim, 'animation'):
+                anim.animation.event_source.stop()
+            self.logger.info("Animation paused")
+        except Exception as e:
+            self.logger.error(f"Failed to pause animation: {e}")
+
+    def _stop_animation(self, anim):
+        """Stop the animation and reset to first frame."""
+        try:
+            if hasattr(anim, 'event_source') and anim.event_source:
+                anim.event_source.stop()
+            elif hasattr(anim, 'animation'):
+                anim.animation.event_source.stop()
+
+            # Reset to first frame
+            if hasattr(anim, 'frame_seq'):
+                anim.frame_seq = anim.new_frame_seq()
+
+            # Redraw the first frame
+            if hasattr(self, 'animation_canvas'):
+                self.animation_canvas.draw()
+
+            self.logger.info("Animation stopped and reset")
+        except Exception as e:
+            self.logger.error(f"Failed to stop animation: {e}")
+
+    def _save_animation_as_gif(self):
+        """Save current animation as GIF file."""
+        try:
+            if not self.current_animation:
+                messagebox.showwarning("No Animation", "No animation to save.")
+                return
+
+            # Ask user for save location
+            from tkinter import filedialog
+            filename = filedialog.asksaveasfilename(
+                defaultextension=".gif",
+                filetypes=[("GIF files", "*.gif"), ("All files", "*.*")],
+                title="Save Animation as GIF"
+            )
+
+            if filename:
+                # Save animation
+                self.python_renderer.save_animation_gif(
+                    self.current_animation,
+                    filename,
+                    duration=10.0
+                )
+                messagebox.showinfo("Success", f"Animation saved as:\n{filename}")
+
+        except Exception as e:
+            self._show_error(f"Failed to save animation as GIF: {str(e)}")
 
     def _open_browser_safely(self, url: str):
         """
