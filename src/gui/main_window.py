@@ -739,6 +739,10 @@ class MainWindow:
         )
         self.contour_view.pack(fill=tk.BOTH, expand=True)
 
+        # Bind context menu events
+        self.contour_view.bind("<<PlanTunnel>>", self._on_plan_tunnel_requested)
+        self.contour_view.bind("<<ViewModeChanged>>", self._on_view_mode_changed_context_menu)
+
         
         # Create 3D visualization panel (initially hidden)
         try:
@@ -934,6 +938,10 @@ class MainWindow:
             scale_factor=scale_factor
         )
         self.contour_view.pack(fill=tk.BOTH, expand=True)
+
+        # Bind context menu events
+        self.contour_view.bind("<<PlanTunnel>>", self._on_plan_tunnel_requested)
+        self.contour_view.bind("<<ViewModeChanged>>", self._on_view_mode_changed_context_menu)
 
         
         # Create 3D visualization panel (initially hidden)
@@ -1377,7 +1385,7 @@ class MainWindow:
                 self.logger.error(f"Error exporting tunnel data: {e}")
 
     def _on_view_mode_changed(self):
-        """Handle view mode change."""
+        """Handle view mode change from main menu radio buttons."""
         mode = self.view_mode_var.get()
         self._set_view_mode(mode)
 
@@ -1635,7 +1643,121 @@ class MainWindow:
         """Handle waypoint selection."""
         self.status_var.set(f"Selected waypoint {waypoint_index + 1}")
 
+    def _on_plan_tunnel_requested(self, event):
+        """Handle Plan Tunnel context menu request."""
+        # Trigger tunnel planning using existing selected points
+        # This should work exactly like the main menu Plan Tunnel button
+        self.tunnel_controls.on_plan_tunnel()
+
+    def _on_view_mode_changed_context_menu(self, event):
+        """Handle View Mode context menu request by reading mode from contour view."""
+        # Get the view mode from the contour view's temporary attribute
+        view_mode = getattr(self.contour_view, '_current_view_mode', None)
+
+        if view_mode is None:
+            self.status_var.set("View mode not specified")
+            return
+
+        # Map right-click menu view modes to main menu equivalents
+        if view_mode == "2d_contour":
+            # Switch to 2D contour view (same as main menu)
+            self._set_view_mode("contour_2d")
+
+        elif view_mode == "3d_terrain":
+            # Switch to 3D terrain view (same as main menu 🏔️ 3D Terrain)
+            self._set_view_mode("terrain_3d")
+
+        elif view_mode == "3d_integrated_html" or view_mode == "3d_integrated_python":
+            # Switch to 3D tunnel view (same as main menu 🚇 3D Tunnel)
+            # Both HTML and Python integrated views map to tunnel_3d in embedded mode
+            self._set_view_mode("tunnel_3d")
+
+        elif view_mode == "analysis":
+            # Switch to analysis panel
+            self.show_panel("analysis")
+            self.status_var.set("Switched to Analysis View")
+
+        else:
+            self.status_var.set(f"Unknown view mode: {view_mode}")
+
     
+    def _on_view_mode_changed_with_mode(self, view_mode: str):
+        """Handle View Mode context menu request with mode parameter (for testing)."""
+        # Copy the same logic as _on_view_mode_changed_context_menu
+        if view_mode == "2d_contour":
+            # Switch to 2D contour view (same as main menu)
+            self._set_view_mode("contour_2d")
+
+        elif view_mode == "3d_terrain":
+            # Switch to 3D terrain view (same as main menu 🏔️ 3D Terrain)
+            self._set_view_mode("terrain_3d")
+
+        elif view_mode == "3d_integrated_html" or view_mode == "3d_integrated_python":
+            # Switch to 3D tunnel view (same as main menu 🚇 3D Tunnel)
+            self._set_view_mode("tunnel_3d")
+
+        elif view_mode == "analysis":
+            # Switch to analysis panel
+            self.show_panel("analysis")
+            self.status_var.set("Switched to Analysis View")
+
+        else:
+            self.status_var.set(f"Unknown view mode: {view_mode}")
+
+    def _open_3d_terrain_window(self):
+        """Open 3D terrain view in new window."""
+        try:
+            if not self.visualization_3d_panel or not self.visualization_3d_panel.terrain_mesh:
+                messagebox.showwarning("No Data", "Please create or load terrain data first.")
+                return
+
+            # Call the visualization panel's HTML view method for terrain only
+            # Temporarily clear tunnel geometry for terrain-only view
+            original_tunnel = self.visualization_3d_panel.tunnel_geometry
+            self.visualization_3d_panel.tunnel_geometry = None
+
+            try:
+                self.visualization_3d_panel._open_html_view()
+                self.status_var.set("Opened 3D terrain view in browser")
+            finally:
+                # Restore tunnel geometry
+                self.visualization_3d_panel.tunnel_geometry = original_tunnel
+
+        except Exception as e:
+            self.logger.error(f"Failed to open 3D terrain window: {e}")
+            messagebox.showerror("Error", f"Failed to open 3D terrain view: {str(e)}")
+
+    def _open_3d_html_window(self):
+        """Open 3D integrated view in browser."""
+        try:
+            if not self.visualization_3d_panel:
+                messagebox.showwarning("3D Not Available", "3D visualization is not available.")
+                return
+
+            # Call the visualization panel's HTML view method
+            self.visualization_3d_panel._open_html_view()
+            self.status_var.set("Opened 3D integrated view in browser")
+
+        except Exception as e:
+            self.logger.error(f"Failed to open 3D HTML window: {e}")
+            messagebox.showerror("Error", f"Failed to open 3D HTML view: {str(e)}")
+
+    def _open_3d_python_window(self):
+        """Open 3D integrated view in Python window."""
+        try:
+            if not self.visualization_3d_panel:
+                messagebox.showwarning("3D Not Available", "3D visualization is not available.")
+                return
+
+            # Call the visualization panel's Python window method
+            self.visualization_3d_panel._open_python_window()
+            self.status_var.set("Opened 3D integrated view in Python window")
+
+        except Exception as e:
+            self.logger.error(f"Failed to open 3D Python window: {e}")
+            messagebox.showerror("Error", f"Failed to open 3D Python view: {str(e)}")
+
+
     def _show_about(self):
         """Show about dialog."""
         about_text = """Terrain Tunneling Calculator

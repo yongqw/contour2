@@ -22,7 +22,8 @@
       "Bash(dir:*)",
       "Bash(timeout:*)",
       "Bash(pip check:*)",
-      "Bash(move:*)"
+      "Bash(move:*)",
+      "Bash(del:*)"
     ],
     "deny": [],
     "ask": []

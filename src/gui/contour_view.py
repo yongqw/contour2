@@ -6,7 +6,7 @@ tunnel paths, and user interactions.
 """
 
 import tkinter as tk
-from tkinter import ttk, font as tkfont
+from tkinter import ttk, font as tkfont, Menu
 from typing import Optional, Callable, List, Tuple, Dict, Any
 import numpy as np
 import matplotlib.pyplot as plt
@@ -18,6 +18,8 @@ from matplotlib.collections import LineCollection
 from models.contour_data import ContourData
 from models.tunnel_geometry import TunnelGeometry, TunnelWaypoint
 from models.visualization_state import VisualizationState, InteractionMode
+from services.visualization_3d import Visualization3DService
+from services.python_3d_renderer import Python3DRenderer
 
 
 class ContourView(ttk.Frame):
@@ -52,9 +54,15 @@ class ContourView(ttk.Frame):
         self.current_tunnel: Optional[TunnelGeometry] = None
         self.selected_waypoints: List[int] = []
 
+        # Right-click menu state
+        self.context_menu_active = False
+        self.last_click_position = (0, 0)
+        self.right_click_enabled = False  # Only enabled after selecting start and end points
+
         self._setup_matplotlib()
         self._setup_ui()
         self._setup_event_handlers()
+        self._setup_context_menu()
 
     def _setup_matplotlib(self):
         """Set up matplotlib figure and axes."""
@@ -196,6 +204,73 @@ class ContourView(ttk.Frame):
         # Track mouse position
         self.mouse_pressed = False
         self.drag_start = None
+
+    def _setup_context_menu(self):
+        """Set up right-click context menu."""
+        # Create context menu
+        self.context_menu = Menu(self, tearoff=0)
+
+        # Plan Tunnel menu item
+        self.context_menu.add_command(
+            label="🛠️ Plan Tunnel",
+            command=self._on_plan_tunnel_clicked,
+            font=tkfont.Font(family="Arial", size=int(10 * self.scale_factor))
+        )
+
+        # View mode submenu
+        view_mode_menu = Menu(self.context_menu, tearoff=0)
+        view_mode_menu.add_command(
+            label="📐 2D Contour View",
+            command=lambda: self._on_view_mode_clicked("2d_contour")
+        )
+        view_mode_menu.add_command(
+            label="🗺️ 3D Terrain View",
+            command=lambda: self._on_view_mode_clicked("3d_terrain")
+        )
+        view_mode_menu.add_command(
+            label="🌐 3D Integrated View (HTML)",
+            command=lambda: self._on_view_mode_clicked("3d_integrated_html")
+        )
+        view_mode_menu.add_command(
+            label="🐍 3D Integrated View (Python)",
+            command=lambda: self._on_view_mode_clicked("3d_integrated_python")
+        )
+        view_mode_menu.add_separator()
+        view_mode_menu.add_command(
+            label="📊 Analysis View",
+            command=lambda: self._on_view_mode_clicked("analysis")
+        )
+
+        self.context_menu.add_cascade(
+            label="👁️ View Mode",
+            menu=view_mode_menu,
+            font=tkfont.Font(family="Arial", size=int(10 * self.scale_factor))
+        )
+
+    def _on_plan_tunnel_clicked(self):
+        """Handle Plan Tunnel menu item click."""
+        if self.right_click_enabled:
+            # Emit event to trigger tunnel planning using existing selected points
+            # This will trigger the same logic as the main menu Plan Tunnel button
+            self.event_generate("<<PlanTunnel>>")
+
+    def _on_view_mode_clicked(self, view_mode: str):
+        """Handle View Mode menu item click."""
+        # Always allow view mode change, but show info if no points selected
+        if not self.right_click_enabled:
+            try:
+                import tkinter.messagebox as messagebox
+                messagebox.showinfo("View Mode",
+                    f"View mode changed to: {view_mode}\n\n"
+                    "Note: For best results, select start and end points first "
+                    "to see the tunnel in the 3D views.")
+            except:
+                pass
+
+        # Always emit the view mode change signal
+        # Store the current view mode in a temporary attribute for the handler to access
+        self._current_view_mode = view_mode
+        self.event_generate("<<ViewModeChanged>>")
 
     def set_contour_data(self, contour_data: ContourData):
         """Set the contour data to display."""
@@ -468,20 +543,58 @@ class ContourView(ttk.Frame):
 
         x, y = event.xdata, event.ydata
 
-        if self.visualization_state.interaction_mode == InteractionMode.POINT_SELECTION:
-            if event.button == 1:  # Left click
+        # Handle right-click context menu
+        if event.button == 3:  # Right click
+            self._show_context_menu(event)
+            return
+
+        # Store click position for context menu use
+        self.last_click_position = (x, y)
+
+        # Handle left-click based on interaction mode
+        if event.button == 1:  # Left click
+            if self.visualization_state.interaction_mode == InteractionMode.POINT_SELECTION:
                 if self.on_point_selected:
                     self.on_point_selected(x, y)
 
                 # Add visual feedback
                 self._add_click_marker(x, y)
 
-        elif self.visualization_state.interaction_mode == InteractionMode.TUNNEL_EDITING:
-            if event.button == 1:  # Left click - select waypoint
+                # Update right-click enabled state
+                self._update_right_click_enabled()
+
+            elif self.visualization_state.interaction_mode == InteractionMode.TUNNEL_EDITING:
+                # Select waypoint
                 self._select_waypoint_at(x, y)
+                # Update right-click enabled state for editing mode
+                self._update_right_click_enabled()
 
         self.mouse_pressed = True
         self.drag_start = (x, y)
+
+    def _show_context_menu(self, event):
+        """Show context menu at the mouse position."""
+        try:
+            # Get the canvas coordinates
+            canvas_x = self.canvas.get_tk_widget().winfo_pointerx()
+            canvas_y = self.canvas.get_tk_widget().winfo_pointery()
+
+            # Post the context menu at the mouse position
+            self.context_menu.post(canvas_x, canvas_y)
+            self.context_menu_active = True
+
+        except Exception as e:
+            print(f"Error showing context menu: {e}")
+
+    def _update_right_click_enabled(self):
+        """Update whether right-click menu should be enabled based on current state."""
+        # Enable right-click if we have selected points
+        if hasattr(self, 'visualization_state') and self.visualization_state:
+            # Check for selected points in visualization state's selection
+            selected_points_count = len(self.visualization_state.selection.selected_points)
+            self.right_click_enabled = selected_points_count >= 2
+        else:
+            self.right_click_enabled = False
 
     def _on_mouse_motion(self, event):
         """Handle mouse motion events."""
@@ -496,6 +609,11 @@ class ContourView(ttk.Frame):
         """Handle mouse release events."""
         self.mouse_pressed = False
         self.drag_start = None
+
+        # Hide context menu if it's active and right button was released
+        if self.context_menu_active and hasattr(self, 'context_menu'):
+            self.context_menu.unpost()
+            self.context_menu_active = False
 
     def _on_mouse_scroll(self, event):
         """Handle mouse scroll events for zooming."""
