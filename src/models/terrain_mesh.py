@@ -21,40 +21,12 @@ class Triangle:
         if len(self.vertex_indices) != 3:
             raise ValueError("Triangle must have exactly 3 vertex indices")
 
-        # Ensure indices are non-negative integers
-        for idx in self.vertex_indices:
-            if not isinstance(idx, int) or idx < 0:
-                raise ValueError(f"Invalid vertex index: {idx}")
-
-    def get_area(self, vertices: np.ndarray) -> float:
-        """
-        Calculate the area of the triangle.
-
-        Args:
-            vertices: Array of vertex positions (n, 3)
-
-        Returns:
-            Triangle area
-        """
-        if len(self.vertex_indices) != 3:
-            return 0.0
-
-        v0, v1, v2 = vertices[self.vertex_indices]
-
-        # Calculate area using cross product
-        edge1 = v1 - v0
-        edge2 = v2 - v0
-        cross = np.cross(edge1, edge2)
-        area = 0.5 * np.linalg.norm(cross)
-
-        return float(area)
-
     def get_normal(self, vertices: np.ndarray) -> np.ndarray:
         """
         Calculate the normal vector of the triangle.
 
         Args:
-            vertices: Array of vertex positions (n, 3)
+            vertices: Array of vertices (n, 3)
 
         Returns:
             Normalized normal vector
@@ -62,14 +34,16 @@ class Triangle:
         if self.normal is not None:
             return self.normal
 
-        if len(self.vertex_indices) != 3:
-            return np.array([0.0, 0.0, 1.0])
+        # Get triangle vertices
+        v0 = vertices[self.vertex_indices[0]]
+        v1 = vertices[self.vertex_indices[1]]
+        v2 = vertices[self.vertex_indices[2]]
 
-        v0, v1, v2 = vertices[self.vertex_indices]
-
-        # Calculate normal using cross product
+        # Calculate edge vectors
         edge1 = v1 - v0
         edge2 = v2 - v0
+
+        # Calculate normal using cross product
         normal = np.cross(edge1, edge2)
 
         # Normalize
@@ -77,36 +51,66 @@ class Triangle:
         if norm > 1e-10:
             normal = normal / norm
         else:
-            normal = np.array([0.0, 0.0, 1.0])
+            # Degenerate triangle, use a default normal
+            normal = np.array([0, 0, 1])
 
-        self.normal = normal
         return normal
 
-    def get_centroid(self, vertices: np.ndarray) -> np.ndarray:
+    def get_area(self, vertices: np.ndarray) -> float:
         """
-        Calculate the centroid of the triangle.
+        Calculate the area of the triangle.
 
         Args:
-            vertices: Array of vertex positions (n, 3)
+            vertices: Array of vertices (n, 3)
 
         Returns:
-            Centroid position
+            Triangle area
         """
-        if len(self.vertex_indices) != 3:
-            return np.array([0.0, 0.0, 0.0])
+        # Get triangle vertices
+        v0 = vertices[self.vertex_indices[0]]
+        v1 = vertices[self.vertex_indices[1]]
+        v2 = vertices[self.vertex_indices[2]]
 
-        triangle_vertices = vertices[self.vertex_indices]
-        return np.mean(triangle_vertices, axis=0)
+        # Calculate edge vectors
+        edge1 = v1 - v0
+        edge2 = v2 - v0
+
+        # Area is half the magnitude of the cross product
+        cross = np.cross(edge1, edge2)
+        area = 0.5 * np.linalg.norm(cross)
+
+        return area
+
+    def get_center(self, vertices: np.ndarray) -> np.ndarray:
+        """
+        Get the center point of the triangle.
+
+        Args:
+            vertices: Array of vertices (n, 3)
+
+        Returns:
+            Center point (3,)
+        """
+        v0 = vertices[self.vertex_indices[0]]
+        v1 = vertices[self.vertex_indices[1]]
+        v2 = vertices[self.vertex_indices[2]]
+
+        return (v0 + v1 + v2) / 3.0
 
 
 @dataclass
 class TerrainMesh:
-    """3D terrain mesh generated from contour data."""
-    vertices: np.ndarray  # Shape: (n, 3) for [x, y, z] coordinates
-    triangles: List[Triangle]
-    vertex_colors: Optional[np.ndarray] = None  # Optional vertex colors (n, 3) or (n, 4)
-    vertex_normals: Optional[np.ndarray] = None  # Optional vertex normals (n, 3)
-    texture_coordinates: Optional[np.ndarray] = None  # Optional UV coordinates (n, 2)
+    """
+    3D terrain mesh representation.
+
+    This class represents a triangulated terrain surface with vertices,
+    triangle faces, and optional vertex attributes like colors and normals.
+    """
+    vertices: np.ndarray  # 3D vertices (n, 3)
+    triangles: List[Triangle]  # Triangle faces
+    vertex_colors: Optional[np.ndarray] = None  # Vertex colors (n, 3) or (n, 4)
+    vertex_normals: Optional[np.ndarray] = None  # Vertex normals (n, 3)
+    texture_coordinates: Optional[np.ndarray] = None  # UV coordinates (n, 2)
 
     # Computed properties
     _vertex_count: Optional[int] = field(default=None, init=False)
@@ -128,20 +132,22 @@ class TerrainMesh:
         # Compute initial properties
         self._vertex_count = len(self.vertices)
         self._triangle_count = len(self.triangles)
-        self._bounds = self._calculate_bounds()
 
     @property
     def vertex_count(self) -> int:
         """Get the number of vertices in the mesh."""
-        return self._vertex_count or len(self.vertices)
+        if self._vertex_count is None:
+            self._vertex_count = len(self.vertices)
+        return self._vertex_count
 
     @property
     def triangle_count(self) -> int:
         """Get the number of triangles in the mesh."""
-        return self._triangle_count or len(self.triangles)
+        if self._triangle_count is None:
+            self._triangle_count = len(self.triangles)
+        return self._triangle_count
 
-    @property
-    def bounds(self) -> Tuple[float, float, float, float, float, float]:
+    def get_bounds(self) -> Tuple[float, float, float, float, float, float]:
         """
         Get the bounding box of the mesh.
 
@@ -149,72 +155,27 @@ class TerrainMesh:
             Tuple of (min_x, max_x, min_y, max_y, min_z, max_z)
         """
         if self._bounds is None:
-            self._bounds = self._calculate_bounds()
+            if len(self.vertices) == 0:
+                self._bounds = (0, 0, 0, 0, 0, 0)
+            else:
+                min_coords = np.min(self.vertices, axis=0)
+                max_coords = np.max(self.vertices, axis=0)
+                self._bounds = (
+                    min_coords[0], max_coords[0],
+                    min_coords[1], max_coords[1],
+                    min_coords[2], max_coords[2]
+                )
         return self._bounds
 
-    def _calculate_bounds(self) -> Tuple[float, float, float, float, float, float]:
-        """Calculate the bounding box of the mesh."""
-        if len(self.vertices) == 0:
-            return (0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
-
-        min_coords = np.min(self.vertices, axis=0)
-        max_coords = np.max(self.vertices, axis=0)
-
-        return (
-            float(min_coords[0]), float(max_coords[0]),  # x bounds
-            float(min_coords[1]), float(max_coords[1]),  # y bounds
-            float(min_coords[2]), float(max_coords[2])   # z bounds
-        )
-
-    def get_total_area(self) -> float:
+    def calculate_vertex_normals(self) -> np.ndarray:
         """
-        Calculate the total surface area of the mesh.
-
-        Returns:
-            Total surface area
-        """
-        total_area = 0.0
-        for triangle in self.triangles:
-            total_area += triangle.get_area(self.vertices)
-        return total_area
-
-    def get_average_elevation(self) -> float:
-        """
-        Calculate the average elevation of the mesh.
-
-        Returns:
-            Average elevation (z-coordinate)
-        """
-        if len(self.vertices) == 0:
-            return 0.0
-        return float(np.mean(self.vertices[:, 2]))
-
-    def get_elevation_range(self) -> Tuple[float, float]:
-        """
-        Get the minimum and maximum elevation.
-
-        Returns:
-            Tuple of (min_elevation, max_elevation)
-        """
-        if len(self.vertices) == 0:
-            return 0.0, 0.0
-
-        min_z = float(np.min(self.vertices[:, 2]))
-        max_z = float(np.max(self.vertices[:, 2]))
-        return min_z, max_z
-
-    def compute_vertex_normals(self) -> np.ndarray:
-        """
-        Compute vertex normals by averaging adjacent triangle normals.
+        Calculate vertex normals by averaging adjacent triangle normals.
 
         Returns:
             Array of vertex normals (n, 3)
         """
-        if self.vertex_normals is not None:
-            return self.vertex_normals
-
         # Initialize normals array
-        normals = np.zeros_like(self.vertices)
+        normals = np.zeros((len(self.vertices), 3))
         counts = np.zeros(len(self.vertices))
 
         # Accumulate triangle normals
@@ -234,61 +195,52 @@ class TerrainMesh:
                 norm = np.linalg.norm(normals[i])
                 if norm > 1e-10:
                     normals[i] /= norm
-                else:
-                    normals[i] = np.array([0.0, 0.0, 1.0])
 
-        self.vertex_normals = normals
         return normals
 
-    def get_triangle_at_point(self, x: float, y: float) -> Optional[Triangle]:
+    def ensure_vertex_normals(self) -> None:
+        """Ensure vertex normals are calculated and stored."""
+        if self.vertex_normals is None:
+            self.vertex_normals = self.calculate_vertex_normals()
+
+    def is_point_inside_triangle(self, point: np.ndarray, triangle_idx: int) -> bool:
         """
-        Find the triangle that contains the given 2D point.
+        Check if a point is inside a triangle using barycentric coordinates.
 
         Args:
-            x: X coordinate
-            y: Y coordinate
+            point: Point to test (2D or 3D)
+            triangle_idx: Index of the triangle to test against
 
         Returns:
-            Triangle containing the point, or None if no triangle found
+            True if point is inside the triangle
         """
-        point = np.array([x, y])
+        triangle = self.triangles[triangle_idx]
+        v0 = self.vertices[triangle.vertex_indices[0]]
+        v1 = self.vertices[triangle.vertex_indices[1]]
+        v2 = self.vertices[triangle.vertex_indices[2]]
 
-        for triangle in self.triangles:
-            # Get triangle vertices projected to 2D
-            triangle_vertices = self.vertices[triangle.vertex_indices][:, :2]
+        # For 2D points, use only x,y coordinates
+        if len(point) == 2:
+            v0 = v0[:2]
+            v1 = v1[:2]
+            v2 = v2[:2]
+            point = point[:2]
 
-            # Use barycentric coordinates to check if point is inside triangle
-            if self._point_in_triangle_2d(point, triangle_vertices):
-                return triangle
-
-        return None
-
-    def _point_in_triangle_2d(self, point: np.ndarray, triangle_vertices: np.ndarray) -> bool:
-        """
-        Check if a 2D point is inside a triangle using barycentric coordinates.
-
-        Args:
-            point: 2D point to check
-            triangle_vertices: 2D triangle vertices (3, 2)
-
-        Returns:
-            True if point is inside triangle
-        """
-        v0 = triangle_vertices[2] - triangle_vertices[0]
-        v1 = triangle_vertices[1] - triangle_vertices[0]
-        v2 = point - triangle_vertices[0]
+        # Compute vectors
+        v0v1 = v1 - v0
+        v0v2 = v2 - v0
+        v0p = point - v0
 
         # Compute dot products
-        dot00 = np.dot(v0, v0)
-        dot01 = np.dot(v0, v1)
-        dot02 = np.dot(v0, v2)
-        dot11 = np.dot(v1, v1)
-        dot12 = np.dot(v1, v2)
+        dot00 = np.dot(v0v2, v0v2)
+        dot01 = np.dot(v0v2, v0v1)
+        dot02 = np.dot(v0v2, v0p)
+        dot11 = np.dot(v0v1, v0v1)
+        dot12 = np.dot(v0v1, v0p)
 
         # Compute barycentric coordinates
-        inv_denom = 1.0 / (dot00 * dot11 - dot01 * dot01) if (dot00 * dot11 - dot01 * dot01) != 0 else 0
-        if inv_denom == 0:
-            return False
+        denom = (dot00 * dot11 - dot01 * dot01)
+        inv_denom = 1.0 / denom if denom != 0 else 1.0
 
         u = (dot11 * dot02 - dot01 * dot12) * inv_denom
         v = (dot00 * dot12 - dot01 * dot02) * inv_denom
@@ -296,123 +248,99 @@ class TerrainMesh:
         # Check if point is in triangle
         return (u >= 0) and (v >= 0) and (u + v <= 1)
 
-    def get_elevation_at_point(self, x: float, y: float) -> Optional[float]:
+    def get_elevation_at(self, x: float, y: float) -> Optional[float]:
         """
-        Get interpolated elevation at a 2D point.
+        Get the elevation (z-coordinate) at a specific x,y position.
 
         Args:
             x: X coordinate
             y: Y coordinate
 
         Returns:
-            Interpolated elevation, or None if point is outside mesh
+            Elevation at the position, or None if outside mesh
         """
-        triangle = self.get_triangle_at_point(x, y)
-        if triangle is None:
-            return None
+        point = np.array([x, y])
 
-        # Get triangle vertices
-        triangle_vertices = self.vertices[triangle.vertex_indices]
+        # Find triangle containing the point
+        for i, triangle in enumerate(self.triangles):
+            if self.is_point_inside_triangle(point, i):
+                # Get triangle vertices
+                v0 = self.vertices[triangle.vertex_indices[0]]
+                v1 = self.vertices[triangle.vertex_indices[1]]
+                v2 = self.vertices[triangle.vertex_indices[2]]
 
-        # Use barycentric interpolation for elevation
-        return self._interpolate_elevation(x, y, triangle_vertices)
+                # Calculate barycentric coordinates
+                v0v1 = v1[:2] - v0[:2]
+                v0v2 = v2[:2] - v0[:2]
+                v0p = point - v0[:2]
 
-    def _interpolate_elevation(self, x: float, y: float, triangle_vertices: np.ndarray) -> float:
-        """
-        Interpolate elevation at a point within a triangle.
+                dot00 = np.dot(v0v2, v0v2)
+                dot01 = np.dot(v0v2, v0v1)
+                dot02 = np.dot(v0v2, v0p)
+                dot11 = np.dot(v0v1, v0v1)
+                dot12 = np.dot(v0v1, v0p)
 
-        Args:
-            x: X coordinate
-            y: Y coordinate
-            triangle_vertices: Triangle vertices (3, 3)
+                denom = (dot00 * dot11 - dot01 * dot01)
+                inv_denom = 1.0 / denom if denom != 0 else 1.0
 
-        Returns:
-            Interpolated elevation
-        """
-        # Project to 2D for barycentric coordinates
-        points_2d = triangle_vertices[:, :2]
-        point_2d = np.array([x, y])
+                u = (dot11 * dot02 - dot01 * dot12) * inv_denom
+                v = (dot00 * dot12 - dot01 * dot02) * inv_denom
+                w = 1.0 - u - v
 
-        v0 = points_2d[2] - points_2d[0]
-        v1 = points_2d[1] - points_2d[0]
-        v2 = point_2d - points_2d[0]
+                # Interpolate elevation
+                elevation = w * v0[2] + u * v1[2] + v * v2[2]
+                return elevation
 
-        dot00 = np.dot(v0, v0)
-        dot01 = np.dot(v0, v1)
-        dot02 = np.dot(v0, v2)
-        dot11 = np.dot(v1, v1)
-        dot12 = np.dot(v1, v2)
-
-        inv_denom = 1.0 / (dot00 * dot11 - dot01 * dot01) if (dot00 * dot11 - dot01 * dot01) != 0 else 1.0
-
-        u = (dot11 * dot02 - dot01 * dot12) * inv_denom
-        v = (dot00 * dot12 - dot01 * dot02) * inv_denom
-        w = 1.0 - u - v
-
-        # Interpolate elevation
-        elevations = triangle_vertices[:, 2]
-        interpolated_elevation = w * elevations[0] + u * elevations[1] + v * elevations[2]
-
-        return float(interpolated_elevation)
+        # Point is outside the mesh
+        return None
 
     def validate_mesh(self) -> Tuple[bool, List[str]]:
         """
-        Validate mesh integrity.
+        Validate the mesh for common issues.
 
         Returns:
             Tuple of (is_valid, list_of_issues)
         """
         issues = []
 
+        # Check for empty mesh
+        if len(self.vertices) == 0:
+            issues.append("Mesh has no vertices")
+            return False, issues
+
+        if len(self.triangles) == 0:
+            issues.append("Mesh has no triangles")
+            return False, issues
+
+        # Check triangle indices
+        vertex_count = len(self.vertices)
+        for i, triangle in enumerate(self.triangles):
+            for idx in triangle.vertex_indices:
+                if idx < 0 or idx >= vertex_count:
+                    issues.append(f"Triangle {i} has invalid vertex index {idx}")
+
         # Check for degenerate triangles
         for i, triangle in enumerate(self.triangles):
             area = triangle.get_area(self.vertices)
             if area < 1e-10:
-                issues.append(f"Triangle {i} has near-zero area (degenerate)")
+                issues.append(f"Triangle {i} is degenerate (area ≈ 0)")
 
-            # Check for invalid vertex indices
-            for idx in triangle.vertex_indices:
-                if idx < 0 or idx >= len(self.vertices):
-                    issues.append(f"Triangle {i} has invalid vertex index {idx}")
-
-        # Check for isolated vertices
-        used_vertices = set()
-        for triangle in self.triangles:
-            used_vertices.update(triangle.vertex_indices)
-
-        isolated_vertices = set(range(len(self.vertices))) - used_vertices
-        if isolated_vertices:
-            issues.append(f"Found {len(isolated_vertices)} isolated vertices")
-
-        # Check for NaN or infinite coordinates
+        # Check for NaN or infinite vertices
         for i, vertex in enumerate(self.vertices):
             if np.any(np.isnan(vertex)):
                 issues.append(f"Vertex {i} contains NaN values")
             if np.any(np.isinf(vertex)):
                 issues.append(f"Vertex {i} contains infinite values")
 
-        is_valid = len(issues) == 0
-        return is_valid, issues
+        return len(issues) == 0, issues
 
-    def simplify_mesh(self, target_reduction: float = 0.5) -> 'TerrainMesh':
+    def copy(self) -> 'TerrainMesh':
         """
-        Simplify the mesh by reducing the number of vertices.
-
-        Args:
-            target_reduction: Fraction of vertices to remove (0.0 to 0.9)
+        Create a deep copy of the mesh.
 
         Returns:
-            Simplified TerrainMesh
+            Copy of the mesh
         """
-        # This is a placeholder implementation
-        # In a real implementation, you would use algorithms like
-        # edge collapse, quadric error metrics, etc.
-
-        if target_reduction <= 0 or target_reduction >= 1.0:
-            raise ValueError("target_reduction must be between 0.0 and 1.0")
-
-        # For now, return a copy of the original mesh
-        # Real implementation would simplify the mesh
         return TerrainMesh(
             vertices=self.vertices.copy(),
             triangles=[Triangle(t.vertex_indices.copy()) for t in self.triangles],
@@ -428,21 +356,26 @@ class TerrainMesh:
         Returns:
             Dictionary representation of the mesh
         """
-        return {
+        data = {
             'vertices': self.vertices.tolist(),
-            'triangles': [triangle.vertex_indices for triangle in self.triangles],
-            'vertex_colors': self.vertex_colors.tolist() if self.vertex_colors is not None else None,
-            'vertex_normals': self.vertex_normals.tolist() if self.vertex_normals is not None else None,
-            'texture_coordinates': self.texture_coordinates.tolist() if self.texture_coordinates is not None else None,
-            'vertex_count': self.vertex_count,
-            'triangle_count': self.triangle_count,
-            'bounds': list(self.bounds)
+            'triangles': [t.vertex_indices for t in self.triangles]
         }
+
+        if self.vertex_colors is not None:
+            data['vertex_colors'] = self.vertex_colors.tolist()
+
+        if self.vertex_normals is not None:
+            data['vertex_normals'] = self.vertex_normals.tolist()
+
+        if self.texture_coordinates is not None:
+            data['texture_coordinates'] = self.texture_coordinates.tolist()
+
+        return data
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'TerrainMesh':
         """
-        Create mesh from dictionary format.
+        Create a mesh from a dictionary representation.
 
         Args:
             data: Dictionary representation of the mesh

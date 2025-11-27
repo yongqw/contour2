@@ -1162,10 +1162,8 @@ class TunnelControls(ttk.Frame):
             # For now, create a simple tunnel without contour data
             from models.tunnel_geometry import TunnelPath, TunnelWaypoint
 
-            path = TunnelPath()
-            path.cross_section_type = cross_section_type
-
-            # Add waypoints with dummy elevations
+            # Create waypoints with dummy elevations
+            waypoints = []
             for point in [start_point] + intermediate_points + [end_point]:
                 # Get terrain elevation at this point from contour data
                 if hasattr(self, 'contour_data') and self.contour_data:
@@ -1174,15 +1172,28 @@ class TunnelControls(ttk.Frame):
                         elevation = 125.0  # Fallback elevation
                 else:
                     elevation = 125.0  # Default elevation when no contour data
-                path.add_waypoint(point[0], point[1], elevation, self.radius_var.get())
+                
+                waypoint = TunnelWaypoint(
+                    x=point[0],
+                    y=point[1],
+                    elevation=elevation,
+                    radius=self.radius_var.get()
+                )
+                waypoints.append(waypoint)
 
             self.progress_var.set(0.7)
             self.update()
 
+            # Create path from waypoints
+            path = TunnelPath(
+                waypoints=waypoints,
+                cross_section_type=cross_section_type
+            )
+            
             self.current_tunnel = TunnelGeometry(path=path)
 
             self.progress_var.set(1.0)
-            self.status_var.set(f"Tunnel created successfully! Length: {path.get_length():.1f}m")
+            self.status_var.set(f"Tunnel created successfully! Length: {path.tunnel_length:.1f}m")
 
             self._update_ui_state()
 

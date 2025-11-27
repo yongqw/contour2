@@ -30,12 +30,18 @@ def setup_logging(log_level: str = "INFO") -> None:
     Args:
         log_level: Logging level (DEBUG, INFO, WARNING, ERROR)
     """
+    # Create logs directory if it doesn't exist
+    logs_dir = Path("logs")
+    logs_dir.mkdir(exist_ok=True)
+    
+    log_file = logs_dir / "contour2.log"
+    
     logging.basicConfig(
         level=getattr(logging, log_level.upper()),
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
         handlers=[
             logging.StreamHandler(sys.stdout),
-            logging.FileHandler('contour2.log', mode='a')
+            logging.FileHandler(log_file, mode='a')
         ]
     )
 

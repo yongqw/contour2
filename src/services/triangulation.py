@@ -5,16 +5,16 @@ This service handles Delaunay triangulation of contour data to generate
 3D terrain meshes, including point reduction and quality filtering.
 """
 
-import numpy as np
-from scipy.spatial import Delaunay
-from typing import List, Tuple, Dict, Any, Optional
 import time
 import warnings
+from typing import List, Tuple, Dict, Any, Optional
+
+import numpy as np
+from scipy.spatial import Delaunay
 
 from models.contour_data import ContourData, ContourLine
 from models.terrain_mesh import TerrainMesh, Triangle
-from utils.math_utils import BoundingBox
-from utils.exceptions import TriangulationError, ValidationError
+from utils.exceptions import TriangulationError
 
 
 class TriangulationService:
@@ -79,7 +79,9 @@ class TriangulationService:
 
             # Apply point reduction if enabled
             if self.enable_point_reduction:
-                all_points = self._apply_point_reduction(all_points)
+                all_points = self._apply_point_reduction(
+                    all_points
+                )
 
             # Add interior points for better triangulation
             all_points = self._add_interior_points(all_points, contour_data)
@@ -111,7 +113,7 @@ class TriangulationService:
         except Exception as e:
             if isinstance(e, TriangulationError):
                 raise
-            raise TriangulationError(f"Triangulation failed: {e}")
+            raise TriangulationError(f"Triangulation failed: {e}") from e
 
     def _extract_points_from_contours(self, contours: List[ContourLine]) -> np.ndarray:
         """
@@ -240,20 +242,18 @@ class TriangulationService:
         for x in x_coords:
             for y in y_coords:
                 # Check if point is inside any contour
-                inside_contour = False
                 for contour in contour_data.contours:
                     if contour.contains_point(x, y):
                         # Get elevation at this point
-                        elevation = contour_data.get_elevation_at(x, y)
+                        contour_data.get_elevation_at(x, y)
                         interior_points.append([x, y])
-                        inside_contour = True
                         break
 
         if interior_points:
             interior_array = np.array(interior_points)
             return np.vstack([points, interior_array])
-        else:
-            return points
+        
+        return points
 
     def _perform_delaunay_triangulation(self, points: np.ndarray) -> Delaunay:
         """
@@ -279,7 +279,7 @@ class TriangulationService:
             return triangulation
 
         except Exception as e:
-            raise TriangulationError(f"Delaunay triangulation failed: {e}")
+            raise TriangulationError(f"Delaunay triangulation failed: {e}") from e
 
     def _filter_triangles_by_quality(self, triangulation: Delaunay, points: np.ndarray) -> Delaunay:
         """
@@ -320,6 +320,8 @@ class TriangulationService:
 
         # Create a new triangulation-like object
         class FilteredTriangulation:
+            """A filtered triangulation object."""
+            
             def __init__(self, points, simplices):
                 self.points = points
                 self.simplices = simplices
@@ -448,7 +450,7 @@ class TriangulationService:
                 elevations[i] = contour_elevations[min_dist_idx]
             else:
                 # Use inverse distance weighting interpolation
-                weights = 1.0 / (np.array(min_distances) + 0.1)  # Add small value to avoid division by zero
+                weights = 1.0 / (np.array(min_distances) + 0.1)
                 elevations[i] = np.sum(weights * np.array(contour_elevations)) / np.sum(weights)
 
         return elevations
@@ -528,7 +530,7 @@ class TriangulationService:
         else:
             reduced_points = total_points
 
-        # Estimate triangles (approximately 2x points for Delaunay triangulation)
+        # Estimate triangles (approx. 2x points for Delaunay triangulation)
         stats['estimated_triangles'] = reduced_points * 2
 
         # Estimate memory usage (rough calculation)
